@@ -1,0 +1,9 @@
+{
+  "name": "In Your Words",
+  "short_name": "In Your Words",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f4ee",
+  "theme_color": "#111111",
+  "description": "Voice-first oral history interview app"
+}

@@ -1,0 +1,12 @@
+{
+  "name": "in-your-words",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "npm run dev -w @iyw/api & npm run dev -w @iyw/web",
+    "dev:api": "npm run dev -w @iyw/api",
+    "dev:web": "npm run dev -w @iyw/web",
+    "build": "npm run build -w @iyw/api && npm run build -w @iyw/web"
+  },
+  "engines": { "node": ">=22" }
+}
