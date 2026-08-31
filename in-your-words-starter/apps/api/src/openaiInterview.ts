@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { appMode, config } from "./config.js";
+import { config, providers } from "./config.js";
 import { INTERVIEW_INSTRUCTIONS } from "./interviewPrompt.js";
 
 const openai = new OpenAI({ apiKey: config.openaiApiKey });
@@ -75,7 +75,7 @@ export async function decideNextTurn(args: {
   transcript: string;
   storyHistory: Array<{ question: string; answer: string }>;
 }): Promise<InterviewDecision> {
-  if (appMode === "mock") {
+  if (providers.interview === "mock") {
     const normalized = args.transcript.toLowerCase();
     const base = { entities: { people: [], places: [], dates: [], organizations: [] }, contains_unstated_personal_fact: false, assumption_explanation: "" };
     if (/^(please )?(repeat|talk slower|slow down|talk faster|pause)/.test(normalized)) {
@@ -120,3 +120,4 @@ export async function decideNextTurn(args: {
   }
   return parsed;
 }
+
