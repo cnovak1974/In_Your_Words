@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import pg from "pg";
-import { appMode, config } from "./config.js";
+import { config, providers } from "./config.js";
 
 type Row = Record<string, any>;
 const storytellers = new Map<string, Row>();
@@ -19,12 +19,14 @@ async function mockQuery(sql: string, values: any[] = []) {
   else if (q.includes("from turns") && q.includes("intent='story_answer'")) rows=[...turns.values()].filter(t=>t.session_id===values[0]&&t.id!==values[1]&&t.intent==="story_answer"&&t.transcript).sort((a,b)=>b.created_at-a.created_at).slice(0,50);
   else if (q.includes("from sessions where id = $1")) { const row=sessions.get(values[0]); if(row && (!q.includes("status = 'active'") || row.status==="active")) rows=[row]; }
   else if (q.startsWith("update turns set status='processing'")) { const row=turns.get(values[0]); if(row) row.status="processing"; }
+  else if (q.startsWith("update turns set audio_byte_length=")) { const row=turns.get(values[0]); if(row) Object.assign(row,{audio_byte_length:values[1],audio_stored_content_type:values[2],audio_stored_at:new Date(),status:"processing"}); }
   else if (q.startsWith("update turns set transcript=")) { const row=turns.get(values[0]); if(row) Object.assign(row,{transcript:values[1],intent:values[2],ai_payload:JSON.parse(values[3]),extracted_data:JSON.parse(values[3]).entities,status:"complete",processed_at:new Date()}); }
   else if (q.startsWith("update turns set status='failed'")) { const row=turns.get(values[0]); if(row) Object.assign(row,{status:"failed",error_message:values[1]}); }
   else if (q.startsWith("update sessions set current_question")) { const row=sessions.get(values[0]); if(row) row.current_question=values[1]; }
   return { rows, rowCount: rows.length };
 }
 
-const realPool = appMode === "mock" ? null : new pg.Pool({ connectionString: config.databaseUrl, max: 10 });
+const realPool = providers.database === "mock" ? null : new pg.Pool({ connectionString: config.databaseUrl, max: 10 });
 export const db: any = realPool ?? { query: mockQuery, connect: async () => ({ query: mockQuery, release() {} }) };
 export async function healthCheckDb() { const result=await db.query("select 1 as ok"); return result.rows[0]?.ok===1; }
+
