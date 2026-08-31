@@ -1,12 +1,15 @@
 import crypto from "node:crypto";
 import cors from "cors";
 import express from "express";
-import { appMode, config } from "./config.js";
+import { appMode, config, providers } from "./config.js";
 import { db, healthCheckDb } from "./db.js";
 import { transcribeRemoteAudio } from "./deepgram.js";
 import { synthesizeSpeech } from "./elevenlabs.js";
 import { decideNextTurn } from "./openaiInterview.js";
-import { confirmObject, createReadUrl, createUploadUrl, mockObjects } from "./storage.js";
+import {
+  confirmObject, createReadUrl, createUploadUrl, mockObjectContentTypes, mockObjects,
+  storageUrlLifetimeSeconds,
+} from "./storage.js";
 
 const app = express();
 app.use(cors({
@@ -18,8 +21,10 @@ app.use(cors({
   exposedHeaders: ["X-TTS-Provider"],
 }));
 app.put("/api/mock/uploads/:key", express.raw({ type: "*/*", limit: "100mb" }), (req, res) => {
-  if (appMode !== "mock") return res.sendStatus(404);
-  mockObjects.set(decodeURIComponent(req.params.key), Buffer.from(req.body));
+  if (providers.storage !== "mock") return res.sendStatus(404);
+  const key = decodeURIComponent(req.params.key);
+  mockObjects.set(key, Buffer.from(req.body));
+  mockObjectContentTypes.set(key, String(req.query.contentType ?? req.headers["content-type"] ?? "application/octet-stream"));
   res.sendStatus(200);
 });
 app.use(express.json({ limit: "1mb" }));
@@ -29,7 +34,7 @@ const INITIAL_QUESTION =
 
 app.get("/health", async (_req, res) => {
   try {
-    res.json({ ok: true, database: await healthCheckDb() });
+    res.json({ ok: true, database: await healthCheckDb(), providers });
   } catch (error) {
     res.status(503).json({ ok: false, error: String(error) });
   }
@@ -91,8 +96,14 @@ app.post("/api/turns/begin", async (req, res) => {
     [turnId, sessionId, session.rows[0].current_question, key, contentType],
   );
 
-  const uploadUrl = await createUploadUrl(key, contentType);
-  res.json({ turnId, uploadUrl, contentType });
+  try {
+    const uploadUrl = await createUploadUrl(key, contentType);
+    res.json({ turnId, uploadUrl, contentType });
+  } catch (error) {
+    console.error(JSON.stringify({ level: "error", event: "storage_presign_failed", turnId, provider: providers.storage }));
+    await db.query("update turns set status='failed', error_message=$2 where id=$1", [turnId, "Storage upload preparation failed"]);
+    res.status(502).json({ error: `${providers.storage} storage failed to prepare the upload` });
+  }
 });
 
 app.post("/api/turns/:id/process", async (req, res) => {
@@ -107,8 +118,12 @@ app.post("/api/turns/:id/process", async (req, res) => {
   if (row.status === "complete" && row.ai_payload) return res.json({ transcript: row.transcript, decision: row.ai_payload });
   if (row.status === "processing") return res.status(409).json({ error: "Turn is already processing" });
   try {
-    await confirmObject(row.raw_audio_key);
-    await db.query("update turns set status='processing' where id=$1", [row.id]);
+    const storedObject = await confirmObject(row.raw_audio_key);
+    await db.query(
+      `update turns set audio_byte_length=$2, audio_stored_content_type=$3, audio_stored_at=now(), status='processing'
+       where id=$1`,
+      [row.id, storedObject.contentLength, storedObject.contentType ?? row.audio_content_type],
+    );
     const audioUrl = await createReadUrl(row.raw_audio_key);
     const transcript = await transcribeRemoteAudio(audioUrl);
 
@@ -157,14 +172,40 @@ app.post("/api/turns/:id/process", async (req, res) => {
   }
 });
 
+app.get("/api/turns/:id/audio", async (req, res) => {
+  const sessionId = String(req.query.sessionId ?? "");
+  if (!sessionId) return res.status(400).json({ error: "sessionId is required" });
+  const turn = await db.query(
+    `select t.*, s.current_question, s.storyteller_id
+     from turns t join sessions s on s.id = t.session_id where t.id = $1`,
+    [req.params.id],
+  );
+  const row = turn.rows[0];
+  if (!row || row.session_id !== sessionId || row.status !== "complete") {
+    return res.status(404).json({ error: "Completed audio not found for this session" });
+  }
+  try {
+    const url = await createReadUrl(row.raw_audio_key);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      url,
+      expiresIn: storageUrlLifetimeSeconds,
+      contentType: row.audio_stored_content_type ?? row.audio_content_type,
+      byteLength: row.audio_byte_length,
+    });
+  } catch {
+    res.status(502).json({ error: `${providers.storage} storage failed to prepare playback` });
+  }
+});
+
 app.post("/api/tts", async (req, res) => {
   const text = String(req.body?.text ?? "").trim();
   if (!text) return res.status(400).json({ error: "text is required" });
   if (text.length > 1500) return res.status(400).json({ error: "text too long" });
   try {
     const audio = await synthesizeSpeech(text);
-    res.setHeader("Content-Type", appMode === "mock" ? "audio/wav" : "audio/mpeg");
-    res.setHeader("X-TTS-Provider", appMode === "mock" ? "browser" : "elevenlabs");
+    res.setHeader("Content-Type", providers.tts === "mock" ? "audio/wav" : "audio/mpeg");
+    res.setHeader("X-TTS-Provider", providers.tts === "mock" ? "browser" : "elevenlabs");
     res.setHeader("Cache-Control", "no-store");
     res.send(Buffer.from(audio));
   } catch (error) {
@@ -174,6 +215,6 @@ app.post("/api/tts", async (req, res) => {
 });
 
 export const server = app.listen(config.port, "0.0.0.0", () => {
-  console.log(JSON.stringify({ level: "info", event: "server_started", port: config.port, mode: appMode }));
+  console.log(JSON.stringify({ level: "info", event: "server_started", port: config.port, mode: appMode, providers }));
 });
 
