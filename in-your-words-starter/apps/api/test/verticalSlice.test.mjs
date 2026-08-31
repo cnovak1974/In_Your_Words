@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 process.env.APP_MODE = "mock";
-process.env.PORT = "10000";
+process.env.PORT = "10001";
+process.env.PUBLIC_API_URL = "http://127.0.0.1:10001";
 const { server } = await import("../dist/server.js");
 const { decideNextTurn } = await import("../dist/openaiInterview.js");
-const api = "http://127.0.0.1:10000";
+const api = "http://127.0.0.1:10001";
 
 test.after(() => new Promise((resolve) => server.close(() => resolve())));
 
@@ -41,4 +42,11 @@ test("question to durable upload to transcript to next question is idempotent", 
   assert.deepEqual(await retry.json(), result);
   const resumed = await fetch(`${api}/api/sessions/${session.id}`);
   assert.equal((await resumed.json()).current_question, result.decision.next_question);
+  const audio = await fetch(`${api}/api/turns/${turn.turnId}/audio?sessionId=${session.id}`);
+  assert.equal(audio.status, 200);
+  const audioResult = await audio.json();
+  assert.equal(audioResult.byteLength, 4);
+  assert.equal(audioResult.contentType, "audio/webm");
+  assert.match(audioResult.url, /^mock:\/\//);
 });
+
