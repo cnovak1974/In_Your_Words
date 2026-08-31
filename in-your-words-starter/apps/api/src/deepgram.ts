@@ -1,7 +1,7 @@
-import { appMode, config } from "./config.js";
+import { config, providers } from "./config.js";
 
 export async function transcribeRemoteAudio(url: string): Promise<string> {
-  if (appMode === "mock") return "I remember a small garden behind the house.";
+  if (providers.transcription === "mock") return "I remember a small garden behind the house.";
   const endpoint = new URL("https://api.deepgram.com/v1/listen");
   endpoint.searchParams.set("model", "nova-3");
   endpoint.searchParams.set("smart_format", "true");
@@ -25,3 +25,4 @@ export async function transcribeRemoteAudio(url: string): Promise<string> {
   if (!transcript) throw new Error("Deepgram returned an empty transcript");
   return transcript;
 }
+
