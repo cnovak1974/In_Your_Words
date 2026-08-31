@@ -28,3 +28,4 @@ For app_question, speak_text answers the user's question briefly; next_question 
 For app_command, speak_text is a very short confirmation; next_question must equal CURRENT_QUESTION unless the command is skip or go_back.
 Set contains_unstated_personal_fact=true if your proposed next_question assumes any personal detail that is not explicitly present in CURRENT_QUESTION, STORY_HISTORY, or CURRENT_TRANSCRIPT.
 `;
+

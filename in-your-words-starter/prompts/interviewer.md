@@ -12,3 +12,4 @@ This file is the human-readable counterpart to `apps/api/src/interviewPrompt.ts`
 - App questions and app commands never enter story content.
 - Store raw audio before downstream AI processing.
 - No voice cloning in the interview loop. The storyteller's cloned voice is reserved for approved finished narration and requires separate consent.
+

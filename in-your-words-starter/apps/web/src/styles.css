@@ -33,3 +33,4 @@ h1 { font-size: clamp(calc(2rem * var(--font-scale)), calc(4.6vw * var(--font-sc
 .talk.recording { transform: scale(1.02); }
 .talk:disabled { opacity: .55; }
 .status { min-height: 28px; text-align: center; font-family: ui-sans-serif, system-ui, sans-serif; font-size: calc(1rem * var(--font-scale)); }
+

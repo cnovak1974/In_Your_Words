@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { beginTurn, bootstrap, getSpeech, processTurn, uploadAudio } from "./api";
+import { beginTurn, bootstrap, getSession, getSpeech, processTurn, uploadAudio } from "./api";
+import { clearPending, loadPending, savePending } from "./pendingRecording";
 import { useRecorder } from "./useRecorder";
 import "./styles.css";
 
@@ -19,12 +20,17 @@ export default function App() {
 
   useEffect(() => {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
-    bootstrap("Dad")
+    const storedSession = localStorage.getItem("iyw-session-id");
+    (storedSession ? getSession(storedSession).then((session) => ({ session })) : bootstrap("Dad"))
       .then(({ session }) => {
+        localStorage.setItem("iyw-session-id", session.id);
         setSessionId(session.id);
         setQuestion(session.current_question);
         setState("ready");
         void speak(session.current_question);
+        void loadPending().then((pending) => {
+          if (pending?.sessionId === session.id) void submitRecording(pending.blob, pending.contentType, session.current_question, session.id);
+        });
       })
       .catch((e) => fail(e));
   }, []);
@@ -35,7 +41,14 @@ export default function App() {
       audioRef.current.pause();
       audioRef.current = null;
     }
-    const blob = await getSpeech(text);
+    const { blob, provider } = await getSpeech(text);
+    if (provider === "browser" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = playbackRateRef.current;
+      window.speechSynthesis.speak(utterance);
+      return;
+    }
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.playbackRate = playbackRateRef.current;
@@ -76,14 +89,25 @@ export default function App() {
       setState("processing");
       const blob = await stop();
       const contentType = blob.type || "audio/webm";
-      const { turnId, uploadUrl } = await beginTurn(sessionId, contentType);
+      await savePending({ sessionId, contentType, blob });
+      await submitRecording(blob, contentType, question);
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  async function submitRecording(blob: Blob, contentType: string, oldQuestion: string, resumeSessionId = sessionId) {
+    if (!resumeSessionId) return;
+    try {
+      setState("processing");
+      const { turnId, uploadUrl } = await beginTurn(resumeSessionId, contentType);
 
       // Permanence-first: raw audio is stored before any transcription/LLM work begins.
       await uploadAudio(uploadUrl, blob, contentType);
       const { decision } = await processTurn(turnId);
+      await clearPending();
 
       applyCommand(decision.command?.name);
-      const oldQuestion = question;
       setQuestion(decision.next_question);
       setState("ready");
 

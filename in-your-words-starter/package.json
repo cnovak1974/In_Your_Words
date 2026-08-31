@@ -6,7 +6,9 @@
     "dev": "npm run dev -w @iyw/api & npm run dev -w @iyw/web",
     "dev:api": "npm run dev -w @iyw/api",
     "dev:web": "npm run dev -w @iyw/web",
-    "build": "npm run build -w @iyw/api && npm run build -w @iyw/web"
+    "build": "npm run build -w @iyw/api && npm run build -w @iyw/web",
+    "typecheck": "npm run build -w @iyw/api && npm run build -w @iyw/web",
+    "test": "npm run test -w @iyw/api"
   },
   "engines": { "node": ">=22" }
 }

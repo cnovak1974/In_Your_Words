@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { config } from "./config.js";
+import { appMode, config } from "./config.js";
 import { INTERVIEW_INSTRUCTIONS } from "./interviewPrompt.js";
 
 const openai = new OpenAI({ apiKey: config.openaiApiKey });
@@ -75,6 +75,19 @@ export async function decideNextTurn(args: {
   transcript: string;
   storyHistory: Array<{ question: string; answer: string }>;
 }): Promise<InterviewDecision> {
+  if (appMode === "mock") {
+    const normalized = args.transcript.toLowerCase();
+    const base = { entities: { people: [], places: [], dates: [], organizations: [] }, contains_unstated_personal_fact: false, assumption_explanation: "" };
+    if (/^(please )?(repeat|talk slower|slow down|talk faster|pause)/.test(normalized)) {
+      const name = normalized.includes("slow") ? "slower" : normalized.includes("fast") ? "faster" : normalized.includes("pause") ? "pause" : "repeat_question";
+      return { ...base, intent: "app_command", command: { name, value: null }, speak_text: "Okay.", next_question: args.currentQuestion };
+    }
+    if (normalized.endsWith("?") || /^(what|when|where|who|why|how)\b/.test(normalized)) {
+      return { ...base, intent: "app_question", command: null, speak_text: "That information is not available in mock mode.", next_question: args.currentQuestion };
+    }
+    const next = "What else comes back to you about that?";
+    return { ...base, intent: "story_answer", command: null, speak_text: next, next_question: next };
+  }
   const history = args.storyHistory.slice(-12)
     .map((t, i) => `TURN ${i + 1}\nQ: ${t.question}\nA: ${t.answer}`)
     .join("\n\n");

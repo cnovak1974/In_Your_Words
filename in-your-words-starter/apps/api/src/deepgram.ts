@@ -1,6 +1,7 @@
-import { config } from "./config.js";
+import { appMode, config } from "./config.js";
 
 export async function transcribeRemoteAudio(url: string): Promise<string> {
+  if (appMode === "mock") return "I remember a small garden behind the house.";
   const endpoint = new URL("https://api.deepgram.com/v1/listen");
   endpoint.searchParams.set("model", "nova-3");
   endpoint.searchParams.set("smart_format", "true");

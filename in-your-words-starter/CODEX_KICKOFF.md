@@ -35,3 +35,4 @@ Tasks:
 - Do not add password auth yet; keep the dev bootstrap clearly isolated and impossible to enable accidentally in production.
 
 When uncertain, choose the implementation that makes data loss less likely and the interview less suggestive.
+

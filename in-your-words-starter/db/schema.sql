@@ -20,6 +20,7 @@ create table if not exists turns (
   raw_audio_key text not null,
   audio_content_type text not null,
   transcript text,
+  extracted_data jsonb,
   intent text check (intent in ('story_answer','app_question','app_command')),
   ai_payload jsonb,
   status text not null check (status in ('uploading','processing','complete','failed')),
@@ -27,6 +28,8 @@ create table if not exists turns (
   created_at timestamptz not null default now(),
   processed_at timestamptz
 );
+
+alter table turns add column if not exists extracted_data jsonb;
 
 create index if not exists idx_turns_session_created on turns(session_id, created_at);
 create index if not exists idx_turns_story_answers on turns(session_id, intent) where intent='story_answer';

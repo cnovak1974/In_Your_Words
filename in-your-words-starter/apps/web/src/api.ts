@@ -15,6 +15,10 @@ export async function bootstrap(name: string) {
   });
 }
 
+export async function getSession(id: string) {
+  return json<{ id: string; current_question: string }>(`/api/sessions/${id}`);
+}
+
 export async function beginTurn(sessionId: string, contentType: string) {
   return json<{ turnId: string; uploadUrl: string; contentType: string }>("/api/turns/begin", {
     method: "POST", body: JSON.stringify({ sessionId, contentType }),
@@ -49,5 +53,5 @@ export async function getSpeech(text: string) {
     body: JSON.stringify({ text }),
   });
   if (!response.ok) throw new Error(await response.text());
-  return response.blob();
+  return { blob: await response.blob(), provider: response.headers.get("X-TTS-Provider") };
 }

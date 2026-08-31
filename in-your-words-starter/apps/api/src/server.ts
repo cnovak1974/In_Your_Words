@@ -1,15 +1,20 @@
 import crypto from "node:crypto";
 import cors from "cors";
 import express from "express";
-import { config } from "./config.js";
+import { appMode, config } from "./config.js";
 import { db, healthCheckDb } from "./db.js";
 import { transcribeRemoteAudio } from "./deepgram.js";
 import { synthesizeSpeech } from "./elevenlabs.js";
 import { decideNextTurn } from "./openaiInterview.js";
-import { confirmObject, createReadUrl, createUploadUrl } from "./storage.js";
+import { confirmObject, createReadUrl, createUploadUrl, mockObjects } from "./storage.js";
 
 const app = express();
 app.use(cors({ origin: config.webOrigin }));
+app.put("/api/mock/uploads/:key", express.raw({ type: "*/*", limit: "100mb" }), (req, res) => {
+  if (appMode !== "mock") return res.sendStatus(404);
+  mockObjects.set(decodeURIComponent(req.params.key), Buffer.from(req.body));
+  res.sendStatus(200);
+});
 app.use(express.json({ limit: "1mb" }));
 
 const INITIAL_QUESTION =
@@ -25,6 +30,7 @@ app.get("/health", async (_req, res) => {
 
 // First-slice bootstrap only. Replace with passwordless auth before broader family use.
 app.post("/api/dev/bootstrap", async (req, res) => {
+  if (!config.allowDevBootstrap) return res.status(404).json({ error: "Not found" });
   const name = String(req.body?.name ?? "Dad").trim().slice(0, 120) || "Dad";
   const client = await db.connect();
   try {
@@ -91,6 +97,8 @@ app.post("/api/turns/:id/process", async (req, res) => {
   if (!turn.rowCount) return res.status(404).json({ error: "Turn not found" });
 
   const row = turn.rows[0];
+  if (row.status === "complete" && row.ai_payload) return res.json({ transcript: row.transcript, decision: row.ai_payload });
+  if (row.status === "processing") return res.status(409).json({ error: "Turn is already processing" });
   try {
     await confirmObject(row.raw_audio_key);
     await db.query("update turns set status='processing' where id=$1", [row.id]);
@@ -103,7 +111,7 @@ app.post("/api/turns/:id/process", async (req, res) => {
        order by created_at desc limit 50`,
       [row.session_id, row.id],
     );
-    const storyHistory = historyResult.rows.reverse().map((r) => ({
+    const storyHistory = historyResult.rows.reverse().map((r: { question_text: string; transcript: string }) => ({
       question: r.question_text,
       answer: r.transcript,
     }));
@@ -118,7 +126,7 @@ app.post("/api/turns/:id/process", async (req, res) => {
     try {
       await client.query("begin");
       await client.query(
-        `update turns set transcript=$2, intent=$3, ai_payload=$4::jsonb, status='complete', processed_at=now()
+        `update turns set transcript=$2, intent=$3, ai_payload=$4::jsonb, extracted_data=($4::jsonb->'entities'), status='complete', processed_at=now()
          where id=$1`,
         [row.id, transcript, decision.intent, JSON.stringify(decision)],
       );
@@ -148,14 +156,16 @@ app.post("/api/tts", async (req, res) => {
   if (text.length > 1500) return res.status(400).json({ error: "text too long" });
   try {
     const audio = await synthesizeSpeech(text);
-    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Type", appMode === "mock" ? "audio/wav" : "audio/mpeg");
+    res.setHeader("X-TTS-Provider", appMode === "mock" ? "browser" : "elevenlabs");
     res.setHeader("Cache-Control", "no-store");
     res.send(Buffer.from(audio));
   } catch (error) {
+    console.error(JSON.stringify({ level: "error", event: "tts_failed", error: String(error) }));
     res.status(502).json({ error: String(error) });
   }
 });
 
-app.listen(config.port, "0.0.0.0", () => {
-  console.log(`In Your Words API listening on ${config.port}`);
+export const server = app.listen(config.port, "0.0.0.0", () => {
+  console.log(JSON.stringify({ level: "info", event: "server_started", port: config.port, mode: appMode }));
 });

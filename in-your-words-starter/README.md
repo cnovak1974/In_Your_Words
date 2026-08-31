@@ -39,6 +39,42 @@ The web app runs at `http://localhost:5173`; the API runs at `http://localhost:1
 
 For Vite, add `VITE_API_URL=http://localhost:10000` to `apps/web/.env` if needed.
 
+### Credential-free mocked vertical slice
+
+Copy `.env.example` to `.env` and leave `APP_MODE=mock`. Then run `npm install`,
+`npm run build`, `npm test`, and `npm run dev`. Mock mode uses an in-memory
+Postgres-compatible repository, an in-memory R2 adapter with upload confirmation,
+deterministic transcription/interview adapters, and generated WAV audio. It never calls a vendor.
+
+The browser stores the current session ID in local storage and keeps an unconfirmed recording in
+IndexedDB. A refresh resumes the session and retries the pending recording. The server confirms
+that raw audio exists before transcription, and completed turn processing is idempotent.
+
+### Live services and environment
+
+Set `APP_MODE=live` and configure:
+
+- `DATABASE_URL`: Neon Postgres pooled connection string.
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`: private Cloudflare R2 bucket credentials.
+- `DEEPGRAM_API_KEY`: Deepgram key with Nova-3 transcription access.
+- `OPENAI_API_KEY` and optionally `OPENAI_INTERVIEW_MODEL`: OpenAI Responses API access.
+- `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, and optionally `ELEVENLABS_MODEL_ID`: generic reader voice.
+- `WEB_ORIGIN`: exact deployed PWA origin.
+
+Apply the database schema with `npm run db:migrate -w @iyw/api`. Configure R2 CORS for the
+exact web origin. The application deliberately refuses to expose `/api/dev/bootstrap` when
+`NODE_ENV=production`, even if `ALLOW_DEV_BOOTSTRAP=true`.
+
+### Render / Neon / R2 deployment
+
+Create Neon first and apply `db/schema.sql`. Create the private R2 bucket and its CORS policy.
+On Render, create a Node web service rooted at the repository, use `npm install && npm run build`
+as the build command, `npm run start -w @iyw/api` as the start command, and `/health` as the
+health check. Add all live variables above and set `NODE_ENV=production`, `APP_MODE=live`.
+Deploy `apps/web/dist` as a static site built with `npm run build -w @iyw/web`, setting
+`VITE_API_URL` to the Render API URL. Finally, replace local R2 CORS origins with the static
+site origin and run the iPad test script below.
+
 ## R2 CORS example for local testing
 
 ```json
