@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+coverage/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Credentials / certificates / keys
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*
+secrets*
+
+# Local Cloudflare/tunnel artifacts
+.cloudflared/
+cloudflared.log
+*.tunnel.log
+
+# Local databases / temp files
+*.sqlite
+*.sqlite3
+tmp/
+temp/
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
