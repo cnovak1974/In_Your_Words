@@ -1,7 +1,7 @@
-import { appMode, config } from "./config.js";
+import { config, providers } from "./config.js";
 
 export async function synthesizeSpeech(text: string): Promise<ArrayBuffer> {
-  if (appMode === "mock") {
+  if (providers.tts === "mock") {
     const samples=8000/4, buffer=new ArrayBuffer(44+samples*2), view=new DataView(buffer);
     const write=(offset:number,value:string)=>[...value].forEach((char,i)=>view.setUint8(offset+i,char.charCodeAt(0)));
     write(0,"RIFF"); view.setUint32(4,36+samples*2,true); write(8,"WAVEfmt "); view.setUint32(16,16,true);
@@ -30,3 +30,4 @@ export async function synthesizeSpeech(text: string): Promise<ArrayBuffer> {
   }
   return response.arrayBuffer();
 }
+
