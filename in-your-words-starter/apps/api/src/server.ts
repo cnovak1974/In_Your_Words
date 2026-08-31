@@ -9,7 +9,13 @@ import { decideNextTurn } from "./openaiInterview.js";
 import { confirmObject, createReadUrl, createUploadUrl, mockObjects } from "./storage.js";
 
 const app = express();
-app.use(cors({ origin: config.webOrigin }));
+app.use(cors({
+  origin(origin, callback) {
+    const allowed = !origin || origin === config.webOrigin ||
+      (appMode === "mock" && /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(origin));
+    callback(allowed ? null : new Error("Origin is not allowed by CORS"), allowed);
+  },
+}));
 app.put("/api/mock/uploads/:key", express.raw({ type: "*/*", limit: "100mb" }), (req, res) => {
   if (appMode !== "mock") return res.sendStatus(404);
   mockObjects.set(decodeURIComponent(req.params.key), Buffer.from(req.body));

@@ -16,6 +16,7 @@ const credential = (name: string) => appMode === "mock" ? `mock-${name.toLowerCa
 export const config = {
   port: Number(process.env.PORT ?? 10000),
   webOrigin: process.env.WEB_ORIGIN ?? "http://localhost:5173",
+  publicApiUrl: process.env.PUBLIC_API_URL ?? `http://localhost:${process.env.PORT ?? 10000}`,
   databaseUrl: credential("DATABASE_URL"),
   r2: {
     accountId: credential("R2_ACCOUNT_ID"),

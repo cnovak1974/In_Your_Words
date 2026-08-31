@@ -14,7 +14,7 @@ const r2 = new S3Client({
 });
 
 export async function createUploadUrl(key: string, contentType: string) {
-  if (appMode === "mock") return `http://localhost:${config.port}/api/mock/uploads/${encodeURIComponent(key)}?contentType=${encodeURIComponent(contentType)}`;
+  if (appMode === "mock") return `${config.publicApiUrl}/api/mock/uploads/${encodeURIComponent(key)}?contentType=${encodeURIComponent(contentType)}`;
   return getSignedUrl(
     r2,
     new PutObjectCommand({ Bucket: config.r2.bucket, Key: key, ContentType: contentType }),
