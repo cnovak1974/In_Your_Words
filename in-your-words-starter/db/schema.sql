@@ -19,6 +19,9 @@ create table if not exists turns (
   question_text text not null,
   raw_audio_key text not null,
   audio_content_type text not null,
+  audio_byte_length bigint,
+  audio_stored_content_type text,
+  audio_stored_at timestamptz,
   transcript text,
   extracted_data jsonb,
   intent text check (intent in ('story_answer','app_question','app_command')),
@@ -30,6 +33,10 @@ create table if not exists turns (
 );
 
 alter table turns add column if not exists extracted_data jsonb;
+alter table turns add column if not exists audio_byte_length bigint;
+alter table turns add column if not exists audio_stored_content_type text;
+alter table turns add column if not exists audio_stored_at timestamptz;
 
 create index if not exists idx_turns_session_created on turns(session_id, created_at);
 create index if not exists idx_turns_story_answers on turns(session_id, intent) where intent='story_answer';
+
