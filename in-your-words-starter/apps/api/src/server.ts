@@ -15,6 +15,7 @@ app.use(cors({
       (appMode === "mock" && /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(origin));
     callback(allowed ? null : new Error("Origin is not allowed by CORS"), allowed);
   },
+  exposedHeaders: ["X-TTS-Provider"],
 }));
 app.put("/api/mock/uploads/:key", express.raw({ type: "*/*", limit: "100mb" }), (req, res) => {
   if (appMode !== "mock") return res.sendStatus(404);
@@ -175,3 +176,4 @@ app.post("/api/tts", async (req, res) => {
 export const server = app.listen(config.port, "0.0.0.0", () => {
   console.log(JSON.stringify({ level: "info", event: "server_started", port: config.port, mode: appMode }));
 });
+
