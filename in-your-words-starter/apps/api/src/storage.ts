@@ -1,8 +1,10 @@
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { appMode, config } from "./config.js";
+import { config, providers } from "./config.js";
 
 export const mockObjects = new Map<string, Buffer>();
+export const mockObjectContentTypes = new Map<string, string>();
+export const storageUrlLifetimeSeconds = 15 * 60;
 
 const r2 = new S3Client({
   region: "auto",
@@ -14,27 +16,27 @@ const r2 = new S3Client({
 });
 
 export async function createUploadUrl(key: string, contentType: string) {
-  if (appMode === "mock") return `${config.publicApiUrl}/api/mock/uploads/${encodeURIComponent(key)}?contentType=${encodeURIComponent(contentType)}`;
+  if (providers.storage === "mock") return `${config.publicApiUrl}/api/mock/uploads/${encodeURIComponent(key)}?contentType=${encodeURIComponent(contentType)}`;
   return getSignedUrl(
     r2,
     new PutObjectCommand({ Bucket: config.r2.bucket, Key: key, ContentType: contentType }),
-    { expiresIn: 15 * 60 },
+    { expiresIn: storageUrlLifetimeSeconds },
   );
 }
 
 export async function createReadUrl(key: string) {
-  if (appMode === "mock") return `mock://${key}`;
+  if (providers.storage === "mock") return `mock://${key}`;
   return getSignedUrl(
     r2,
     new GetObjectCommand({ Bucket: config.r2.bucket, Key: key }),
-    { expiresIn: 15 * 60 },
+    { expiresIn: storageUrlLifetimeSeconds },
   );
 }
 
 export async function confirmObject(key: string) {
-  if (appMode === "mock") {
+  if (providers.storage === "mock") {
     const value=mockObjects.get(key); if(!value?.length) throw new Error("Uploaded audio object is missing or empty");
-    return { contentLength:value.length, contentType:"audio/webm" };
+    return { contentLength:value.length, contentType:mockObjectContentTypes.get(key) ?? "application/octet-stream" };
   }
   const result = await r2.send(new HeadObjectCommand({ Bucket: config.r2.bucket, Key: key }));
   if (!result.ContentLength || result.ContentLength <= 0) {
@@ -42,3 +44,4 @@ export async function confirmObject(key: string) {
   }
   return { contentLength: result.ContentLength, contentType: result.ContentType };
 }
+
