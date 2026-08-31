@@ -21,13 +21,21 @@ export default function App() {
   useEffect(() => {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
     const storedSession = localStorage.getItem("iyw-session-id");
-    (storedSession ? getSession(storedSession).then((session) => ({ session })) : bootstrap("Dad"))
+    const resume = storedSession
+      ? getSession(storedSession)
+          .then((session) => ({ session }))
+          .catch(() => {
+            localStorage.removeItem("iyw-session-id");
+            return bootstrap("Dad");
+          })
+      : bootstrap("Dad");
+    resume
       .then(({ session }) => {
         localStorage.setItem("iyw-session-id", session.id);
         setSessionId(session.id);
         setQuestion(session.current_question);
         setState("ready");
-        void speak(session.current_question);
+        void speakSafely(session.current_question);
         void loadPending().then((pending) => {
           if (pending?.sessionId === session.id) void submitRecording(pending.blob, pending.contentType, session.current_question, session.id);
         });
@@ -57,6 +65,16 @@ export default function App() {
     await audio.play();
   }
 
+  async function speakSafely(text: string) {
+    try {
+      await speak(text);
+      setError("");
+    } catch {
+      // The completed turn and next question remain usable if iOS blocks delayed autoplay.
+      setError("The question is ready, but audio playback was blocked. You can continue recording.");
+    }
+  }
+
   function applyCommand(name?: string) {
     switch (name) {
       case "slower": {
@@ -72,7 +90,7 @@ export default function App() {
       case "high_contrast": setHighContrast(true); break;
       case "normal_contrast": setHighContrast(false); break;
       case "pause": audioRef.current?.pause(); break;
-      case "repeat_question": void speak(question); break;
+      case "repeat_question": void speakSafely(question); break;
     }
   }
 
@@ -80,6 +98,7 @@ export default function App() {
     if (!sessionId || state === "processing") return;
     try {
       if (!recording) {
+        setError("");
         audioRef.current?.pause();
         await start();
         setState("recording");
@@ -112,11 +131,11 @@ export default function App() {
       setState("ready");
 
       if (decision.intent === "story_answer") {
-        await speak(decision.next_question);
+        await speakSafely(decision.next_question);
       } else {
-        await speak(decision.speak_text);
+        await speakSafely(decision.speak_text);
         if (decision.next_question === oldQuestion && decision.speak_text !== oldQuestion) {
-          await speak(oldQuestion);
+          await speakSafely(oldQuestion);
         }
       }
     } catch (e) {
@@ -125,7 +144,7 @@ export default function App() {
   }
 
   function fail(e: unknown) {
-    setError(e instanceof Error ? e.message : String(e));
+    setError(e instanceof Error ? e.message : typeof e === "string" ? e : "Unexpected browser storage error");
     setState("error");
   }
 
@@ -149,7 +168,9 @@ export default function App() {
         {recording && "I'm listening."}
         {state === "processing" && "Saving your recording and preparing the next question."}
         {state === "error" && `Something went wrong: ${error}`}
+        {state === "ready" && error}
       </div>
     </main>
   );
 }
+
