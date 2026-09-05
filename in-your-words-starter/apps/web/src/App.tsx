@@ -11,6 +11,7 @@ export default function App() {
   const [question, setQuestion] = useState("Getting the interview ready…");
   const [state, setState] = useState<UiState>("booting");
   const [error, setError] = useState("");
+  const [latestTranscript, setLatestTranscript] = useState("");
   const [fontScale, setFontScale] = useState(1);
   const [highContrast, setHighContrast] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -123,7 +124,8 @@ export default function App() {
 
       // Permanence-first: raw audio is stored before any transcription/LLM work begins.
       await uploadAudio(uploadUrl, blob, contentType);
-      const { decision } = await processTurn(turnId);
+      const { decision, transcript } = await processTurn(turnId);
+      setLatestTranscript(transcript);
       await clearPending();
 
       applyCommand(decision.command?.name);
@@ -170,6 +172,12 @@ export default function App() {
         {state === "error" && `Something went wrong: ${error}`}
         {state === "ready" && error}
       </div>
+
+      {latestTranscript && (
+        <div>
+          <small>Deepgram transcript:</small> {latestTranscript}
+        </div>
+      )}
     </main>
   );
 }
