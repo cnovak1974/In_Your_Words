@@ -5,7 +5,7 @@ import { appMode, config, providers } from "./config.js";
 import { db, healthCheckDb } from "./db.js";
 import { transcribeRemoteAudio } from "./deepgram.js";
 import { synthesizeSpeech } from "./elevenlabs.js";
-import { decideNextTurn } from "./openaiInterview.js";
+import { QUESTION_STRATEGIES, decideNextTurn, type QuestionStrategy } from "./openaiInterview.js";
 import {
   confirmObject, createReadUrl, createUploadUrl, mockObjectContentTypes, mockObjects,
   storageUrlLifetimeSeconds,
@@ -128,14 +128,15 @@ app.post("/api/turns/:id/process", async (req, res) => {
     const transcript = await transcribeRemoteAudio(audioUrl);
 
     const historyResult = await db.query(
-      `select question_text, transcript from turns
+      `select question_text, transcript, ai_payload->>'strategy' as strategy from turns
        where session_id=$1 and intent='story_answer' and transcript is not null and id <> $2
        order by created_at desc limit 50`,
       [row.session_id, row.id],
     );
-    const storyHistory = historyResult.rows.reverse().map((r: { question_text: string; transcript: string }) => ({
+    const storyHistory = historyResult.rows.reverse().map((r: { question_text: string; transcript: string; strategy?: string | null }) => ({
       question: r.question_text,
       answer: r.transcript,
+      strategy: QUESTION_STRATEGIES.includes(r.strategy as QuestionStrategy) ? r.strategy as QuestionStrategy : undefined,
     }));
 
     const decision = await decideNextTurn({
