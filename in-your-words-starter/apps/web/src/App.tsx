@@ -156,6 +156,17 @@ export default function App() {
         }
       }
     } catch (e) {
+      if (e instanceof Error && e.message.includes("Deepgram returned an empty transcript")) {
+        try {
+          await clearPending();
+        } catch (clearError) {
+          fail(clearError);
+          return;
+        }
+        setError("I couldn't hear enough speech in that recording. Please try again.");
+        setState("ready");
+        return;
+      }
       fail(e);
     }
   }
