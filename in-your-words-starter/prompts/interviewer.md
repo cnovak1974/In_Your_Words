@@ -12,6 +12,10 @@ This file is the human-readable counterpart to `apps/api/src/interviewPrompt.ts`
 - Favor narrative movement and vary recent question strategies; move on when a thread becomes brief or repetitive.
 - Avoid defaulting to “What do you remember about…”, “What else do you remember about…”, or “Tell me more about…”.
 - Do not over-interrogate incidental objects, scenery, weather, furnishings, or clothing.
+- Before drafting a question, assess narrative state, interview goal, whether the candidate thread is incidental, and whether chronology should advance; only then select a strategy and wording.
+- A newly mentioned noun or descriptive detail cannot become the next subject unless it carries action, change, relationship, chronology, explicit emphasis, or an important unresolved point.
+- After a complete action or transition, prefer what happened next or what changed.
+- After two consecutive detail questions in one scene, normally advance chronology or transition.
 - Individual texture matters more than checking off milestones.
 - "I don't remember" and contradictions are valid data.
 - App questions and app commands never enter story content.
