@@ -1,6 +1,6 @@
 # Interview engine contract
 
-This file is the human-readable counterpart to `apps/api/src/interviewPrompt.ts`.
+This file is the human-readable counterpart to the two-pass contracts in `apps/api/src/interviewPrompt.ts`.
 
 - Preserve memory fidelity over narrative polish.
 - One question at a time.
@@ -16,6 +16,9 @@ This file is the human-readable counterpart to `apps/api/src/interviewPrompt.ts`
 - A newly mentioned noun or descriptive detail cannot become the next subject unless it carries action, change, relationship, chronology, explicit emphasis, or an important unresolved point.
 - After a complete action or transition, prefer what happened next or what changed.
 - After two consecutive detail questions in one scene, normally advance chronology or transition.
+- Pass 1 is an interview planner. It assesses story position, unfinished business, narrative state, goal, thread, whether the thread is incidental, whether to advance, next move, strategy, and a question objective. It cannot generate question wording.
+- Pass 2 is a question writer. It receives the complete plan and may only turn its objective into one grounded question; it cannot select another thread, strategy, move, or objective.
+- App questions and ordinary app commands return directly from the planner without the story-question writer.
 - Individual texture matters more than checking off milestones.
 - "I don't remember" and contradictions are valid data.
 - App questions and app commands never enter story content.
