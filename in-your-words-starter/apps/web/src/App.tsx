@@ -6,12 +6,15 @@ import "./styles.css";
 
 type UiState = "booting" | "ready" | "recording" | "processing" | "error";
 
+const silentAudioUrl = "data:audio/wav;base64,UklGRiUAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQEAAACA";
+
 export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [question, setQuestion] = useState("Getting the interview ready…");
   const [state, setState] = useState<UiState>("booting");
   const [error, setError] = useState("");
   const [latestTranscript, setLatestTranscript] = useState("");
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [fontScale, setFontScale] = useState(1);
   const [highContrast, setHighContrast] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -36,7 +39,6 @@ export default function App() {
         setSessionId(session.id);
         setQuestion(session.current_question);
         setState("ready");
-        void speakSafely(session.current_question);
         void loadPending().then((pending) => {
           if (pending?.sessionId === session.id) void submitRecording(pending.blob, pending.contentType, session.current_question, session.id);
         });
@@ -48,7 +50,6 @@ export default function App() {
     if (!text.trim()) return;
     if (audioRef.current) {
       audioRef.current.pause();
-      audioRef.current = null;
     }
     const { blob, provider } = await getSpeech(text);
     if (provider === "browser" && "speechSynthesis" in window) {
@@ -59,11 +60,25 @@ export default function App() {
       return;
     }
     const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
+    const audio = audioRef.current ?? new Audio();
+    audio.src = url;
     audio.playbackRate = playbackRateRef.current;
     audioRef.current = audio;
     audio.onended = () => URL.revokeObjectURL(url);
     await audio.play();
+  }
+
+  async function enableVoice() {
+    const audio = new Audio(silentAudioUrl);
+    audioRef.current = audio;
+    try {
+      await audio.play();
+      setVoiceEnabled(true);
+    } catch {
+      await speakSafely(question);
+      return;
+    }
+    await speakSafely(question);
   }
 
   async function speakSafely(text: string) {
@@ -156,6 +171,12 @@ export default function App() {
         <div className="eyebrow">IN YOUR WORDS</div>
         <h1>{question}</h1>
       </section>
+
+      {state === "ready" && !voiceEnabled && (
+        <button type="button" onClick={() => void enableVoice()}>
+          Enable voice
+        </button>
+      )}
 
       <button
         className={recording ? "talk recording" : "talk"}
