@@ -6,6 +6,11 @@ import { db, healthCheckDb } from "./db.js";
 import { transcribeRemoteAudio } from "./deepgram.js";
 import { synthesizeSpeech } from "./elevenlabs.js";
 import {
+  deriveNewsreelCandidate,
+  isNewsreelCandidate,
+  type NewsreelCandidate,
+} from "./newsreel.js";
+import {
   CHRONOLOGY_STATUSES,
   FOLLOWUP_VALUES,
   STORY_IMPORTANCE_VALUES,
@@ -82,7 +87,20 @@ app.get("/api/sessions/:id", async (req, res) => {
     [req.params.id],
   );
   if (!result.rowCount) return res.status(404).json({ error: "Session not found" });
-  res.json(result.rows[0]);
+  const candidateResult = await db.query(
+    `select ai_payload->'newsreel_candidate' as newsreel_candidate
+     from turns
+     where session_id=$1 and status='complete' and ai_payload ? 'newsreel_candidate'
+     order by created_at desc limit 1`,
+    [req.params.id],
+  );
+  const candidate = candidateResult.rows[0]?.newsreel_candidate;
+  res.json({
+    ...result.rows[0],
+    context_ready: isNewsreelCandidate(candidate) ? candidate.context_ready : false,
+    context_missing: isNewsreelCandidate(candidate) ? candidate.context_missing : ["date", "place"],
+    newsreel_candidate: isNewsreelCandidate(candidate) ? candidate : null,
+  });
 });
 
 app.post("/api/turns/begin", async (req, res) => {
@@ -138,7 +156,7 @@ app.post("/api/turns/:id/process", async (req, res) => {
     const transcript = await transcribeRemoteAudio(audioUrl);
 
     const historyResult = await db.query(
-      `select question_text, transcript,
+      `select id, question_text, transcript,
               ai_payload->>'chronology_status' as chronology_status,
               ai_payload->>'current_life_period' as current_life_period,
               ai_payload->>'current_topic' as current_topic,
@@ -151,13 +169,16 @@ app.post("/api/turns/:id/process", async (req, res) => {
               ai_payload->>'current_thread_followup_count' as current_thread_followup_count,
               ai_payload->>'followup_budget' as followup_budget,
               ai_payload->>'followup_budget_remaining' as followup_budget_remaining,
-              ai_payload->>'should_advance' as should_advance
+              ai_payload->>'should_advance' as should_advance,
+              ai_payload->'newsreel_candidate' as newsreel_candidate
        from turns
        where session_id=$1 and intent='story_answer' and transcript is not null and id <> $2
        order by created_at desc limit 50`,
       [row.session_id, row.id],
     );
-    const storyHistory = historyResult.rows.reverse().map((r: {
+    const orderedHistoryRows = [...historyResult.rows].reverse();
+    const storyHistory = orderedHistoryRows.map((r: {
+      id: string;
       question_text: string;
       transcript: string;
       chronology_status?: string | null;
@@ -173,6 +194,7 @@ app.post("/api/turns/:id/process", async (req, res) => {
       followup_budget?: string | null;
       followup_budget_remaining?: string | null;
       should_advance?: string | null;
+      newsreel_candidate?: unknown;
     }) => ({
       question: r.question_text,
       answer: r.transcript,
@@ -202,12 +224,61 @@ app.post("/api/turns/:id/process", async (req, res) => {
         : Number(r.followup_budget_remaining),
       shouldAdvance: r.should_advance == null ? undefined : r.should_advance === "true",
     }));
+    const candidateHistoryResult = await db.query(
+      `select ai_payload->'newsreel_candidate' as newsreel_candidate
+       from turns
+       where session_id=$1 and id <> $2 and ai_payload ? 'newsreel_candidate'
+       order by created_at asc`,
+      [row.session_id, row.id],
+    );
+    const contextEvidenceResult = await db.query(
+      `select id, transcript
+       from turns
+       where session_id=$1 and intent='story_answer' and transcript is not null and id <> $2
+       order by created_at asc`,
+      [row.session_id, row.id],
+    );
 
     const decision = await decideNextTurn({
       currentQuestion: row.current_question,
       transcript,
       storyHistory,
     });
+    const previousCandidates = candidateHistoryResult.rows
+      .map((historyRow: { newsreel_candidate?: unknown }) => historyRow.newsreel_candidate)
+      .filter(isNewsreelCandidate);
+    const newsreelCandidate: NewsreelCandidate | null = decision.intent === "story_answer"
+      ? deriveNewsreelCandidate({
+        turns: [
+          ...contextEvidenceResult.rows.map((historyRow: { id: string; transcript: string }) => ({
+            id: historyRow.id,
+            transcript: historyRow.transcript,
+          })),
+          { id: row.id, transcript },
+        ],
+        previousCandidates,
+        resumeQuestion: decision.next_question,
+        resumeThread: decision.story_thread,
+        resumeDirectorState: {
+          chronology_status: decision.chronology_status,
+          current_life_period: decision.current_life_period,
+          current_topic: decision.current_topic,
+          story_thread: decision.story_thread,
+          story_is_emerging: decision.story_is_emerging,
+          story_resolution_status: decision.story_resolution_status,
+          story_importance: decision.story_importance,
+          should_advance: decision.should_advance,
+        },
+      })
+      : previousCandidates.at(-1) ?? null;
+    const aiPayload = newsreelCandidate
+      ? {
+        ...decision,
+        context_ready: newsreelCandidate.context_ready,
+        context_missing: newsreelCandidate.context_missing,
+        newsreel_candidate: newsreelCandidate,
+      }
+      : decision;
 
     const client = await db.connect();
     try {
@@ -215,7 +286,7 @@ app.post("/api/turns/:id/process", async (req, res) => {
       await client.query(
         `update turns set transcript=$2, intent=$3, ai_payload=$4::jsonb, extracted_data=($4::jsonb->'entities'), status='complete', processed_at=now()
          where id=$1`,
-        [row.id, transcript, decision.intent, JSON.stringify(decision)],
+        [row.id, transcript, decision.intent, JSON.stringify(aiPayload)],
       );
       await client.query(
         "update sessions set current_question=$2, updated_at=now() where id=$1",
@@ -229,7 +300,7 @@ app.post("/api/turns/:id/process", async (req, res) => {
       client.release();
     }
 
-    res.json({ transcript, decision });
+    res.json({ transcript, decision: aiPayload });
   } catch (error) {
     await db.query("update turns set status='failed', error_message=$2 where id=$1", [row.id, String(error)])
       .catch(() => undefined);
@@ -282,3 +353,4 @@ app.post("/api/tts", async (req, res) => {
 export const server = app.listen(config.port, "0.0.0.0", () => {
   console.log(JSON.stringify({ level: "info", event: "server_started", port: config.port, mode: appMode, providers }));
 });
+

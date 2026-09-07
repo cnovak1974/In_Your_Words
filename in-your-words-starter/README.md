@@ -19,7 +19,13 @@ The raw audio upload happens before transcription or LLM processing. That is del
 
 ## What is deliberately not in this slice
 
-Auth, historical lookup, narrative chapter generation, duplicate detection, contradiction workflow, photo capture, voice cloning, newsreels, export and Remotion video. The database/API boundaries are set up so those can be added without replacing the core capture loop.
+Auth, historical lookup, narrative chapter generation, contradiction workflow, photo capture, voice cloning, produced Newsreel media, export and Remotion video. The database/API boundaries are set up so those can be added without replacing the core capture loop.
+
+## Newsreel Phase 1 boundary
+
+The API now derives optional Newsreel context metadata after each completed story turn. A candidate becomes ready only when supplied story turns establish a usable year or approximate year/range and at least a city/region. Readiness never changes the active interview question or calls a historical provider.
+
+The candidate, stable context key, and exact resume snapshot are stored inside the existing turn `ai_payload` and exposed by `GET /api/sessions/:id` as `newsreel_candidate`. Historical retrieval, script generation, offers, playback, imagery, and video remain unimplemented. Future retrieval must return separately sourced local, national, and international facts, and must never imply that the storyteller personally experienced surrounding historical events.
 
 ## Local setup
 
@@ -115,3 +121,4 @@ Replace the origin with the production web origin before deployment.
 The `/api/dev/bootstrap` route is intentionally temporary and has no authentication. It is suitable only for local/closed first-function testing. Do not expose this build publicly until passwordless access control and per-storyteller authorization are added.
 
 Also review vendor data-retention/privacy settings before using sensitive family recordings at scale. `store: false` is set on the OpenAI Responses call, but that should not be treated as a substitute for a full vendor/privacy review.
+

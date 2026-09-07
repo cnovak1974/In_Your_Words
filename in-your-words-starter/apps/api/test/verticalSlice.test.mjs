@@ -400,7 +400,12 @@ test("question to durable upload to transcript to next question remains idempote
   assert.equal(retry.status, 200);
   assert.deepEqual(await retry.json(), result);
   const resumed = await fetch(`${api}/api/sessions/${session.id}`);
-  assert.equal((await resumed.json()).current_question, result.decision.next_question);
+  const resumedSession = await resumed.json();
+  assert.equal(resumedSession.current_question, result.decision.next_question);
+  assert.equal(resumedSession.context_ready, false);
+  assert.deepEqual(resumedSession.context_missing, ["date", "place"]);
+  assert.equal(resumedSession.newsreel_candidate.status, "not_ready");
+  assert.equal(resumedSession.newsreel_candidate.resume_question, result.decision.next_question);
   const audio = await fetch(`${api}/api/turns/${turn.turnId}/audio?sessionId=${session.id}`);
   assert.equal(audio.status, 200);
   const audioResult = await audio.json();
@@ -408,3 +413,4 @@ test("question to durable upload to transcript to next question remains idempote
   assert.equal(audioResult.contentType, "audio/webm");
   assert.match(audioResult.url, /^mock:\/\//);
 });
+
