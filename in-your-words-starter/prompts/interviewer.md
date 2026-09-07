@@ -11,6 +11,10 @@ This file is the human-readable counterpart to the two-pass contracts in `apps/a
 - A topic is not yet a story. Prefer questions that invite an event, scene, decision, relationship, conflict, consequence, transition, or memorable experience.
 - When a story begins, follow its supplied action instead of continuing a predetermined checklist.
 - Stay with subjects containing real experience; move forward when the story or topic is exhausted.
+- Protect storyteller momentum. A possible follow-up is not automatically a worthwhile follow-up.
+- Before staying with an event, identify the meaningfully new dimension the question is likely to reveal: consequence, turning point, emotion, relationship, decision, conflict, memorable event, chronology, behavior change, or transition. “More detail” is not sufficient.
+- One strong follow-up is better than three weak ones. Once an event has a beginning, development, and resolution, normally move forward unless a genuinely important thread emerged.
+- followup_value, followup_reason, and story_resolution_status record this editorial judgment in the existing AI payload. Low-value follow-ups normally require should_advance=true.
 - Avoid defaulting to “What do you remember about…”, “What else do you remember about…”, or “Tell me more about…”.
 - Do not over-interrogate incidental objects, scenery, weather, furnishings, or clothing.
 - Before drafting a question, assess chronology, useful missing anchors, whether a story is emerging, the active thread, and whether to advance.

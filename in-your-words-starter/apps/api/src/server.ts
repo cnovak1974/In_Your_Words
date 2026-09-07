@@ -7,8 +7,12 @@ import { transcribeRemoteAudio } from "./deepgram.js";
 import { synthesizeSpeech } from "./elevenlabs.js";
 import {
   CHRONOLOGY_STATUSES,
+  FOLLOWUP_VALUES,
+  STORY_RESOLUTION_STATUSES,
   decideNextTurn,
   type ChronologyStatus,
+  type FollowupValue,
+  type StoryResolutionStatus,
 } from "./openaiInterview.js";
 import {
   confirmObject, createReadUrl, createUploadUrl, mockObjectContentTypes, mockObjects,
@@ -137,7 +141,10 @@ app.post("/api/turns/:id/process", async (req, res) => {
               ai_payload->>'current_life_period' as current_life_period,
               ai_payload->>'current_topic' as current_topic,
               ai_payload->>'story_thread' as story_thread,
-              ai_payload->>'story_is_emerging' as story_is_emerging
+              ai_payload->>'story_is_emerging' as story_is_emerging,
+              ai_payload->>'followup_value' as followup_value,
+              ai_payload->>'followup_reason' as followup_reason,
+              ai_payload->>'story_resolution_status' as story_resolution_status
        from turns
        where session_id=$1 and intent='story_answer' and transcript is not null and id <> $2
        order by created_at desc limit 50`,
@@ -151,6 +158,9 @@ app.post("/api/turns/:id/process", async (req, res) => {
       current_topic?: string | null;
       story_thread?: string | null;
       story_is_emerging?: string | null;
+      followup_value?: string | null;
+      followup_reason?: string | null;
+      story_resolution_status?: string | null;
     }) => ({
       question: r.question_text,
       answer: r.transcript,
@@ -161,6 +171,13 @@ app.post("/api/turns/:id/process", async (req, res) => {
       currentTopic: r.current_topic ?? undefined,
       storyThread: r.story_thread ?? undefined,
       storyIsEmerging: r.story_is_emerging == null ? undefined : r.story_is_emerging === "true",
+      followupValue: FOLLOWUP_VALUES.includes(r.followup_value as FollowupValue)
+        ? r.followup_value as FollowupValue
+        : undefined,
+      followupReason: r.followup_reason ?? undefined,
+      storyResolutionStatus: STORY_RESOLUTION_STATUSES.includes(r.story_resolution_status as StoryResolutionStatus)
+        ? r.story_resolution_status as StoryResolutionStatus
+        : undefined,
     }));
 
     const decision = await decideNextTurn({

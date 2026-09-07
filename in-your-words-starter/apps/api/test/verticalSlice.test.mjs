@@ -8,8 +8,10 @@ const { server } = await import("../dist/server.js");
 const {
   CHRONOLOGY_STATUSES,
   CONTEXT_OPPORTUNITIES,
+  FOLLOWUP_VALUES,
   INTERVIEW_DIRECTOR_SCHEMA,
   QUESTION_WRITER_SCHEMA,
+  STORY_RESOLUTION_STATUSES,
   decideNextTurn,
   directNextTurn,
   writeNextQuestion,
@@ -28,6 +30,9 @@ function historyTurn(args, decision) {
     currentTopic: decision.current_topic,
     storyThread: decision.story_thread,
     storyIsEmerging: decision.story_is_emerging,
+    followupValue: decision.followup_value,
+    followupReason: decision.followup_reason,
+    storyResolutionStatus: decision.story_resolution_status,
   };
 }
 
@@ -49,6 +54,14 @@ async function runSequence(initialQuestion, answers) {
 }
 
 const vagueQuestion = /what do you remember about|what else do you remember|what stands out to you about|what was .+ like for you|tell me more|your involvement|your relationship with/i;
+const genericResolvedContinuation = /what happened (?:right )?after that|what did you do after that|what happened next\??$/i;
+
+function assertResolvedTransition(result) {
+  assert.equal(result.direction.followup_value, "low");
+  assert.equal(result.direction.story_resolution_status, "resolved");
+  assert.equal(result.direction.should_advance, true);
+  assert.doesNotMatch(result.decision.next_question, genericResolvedContinuation);
+}
 
 test("app questions and commands bypass story-question generation", async () => {
   const currentQuestion = "What happened next?";
@@ -174,6 +187,79 @@ test("childhood activity sequence anchors age and follows how it began", async (
   for (const { decision } of results) assert.doesNotMatch(decision.next_question, vagueQuestion);
 });
 
+test("childhood mischief permits one consequential follow-up and then advances", async () => {
+  const results = await runSequence("What were you getting into as a child?", [
+    "When I was twelve, a friend and I smoked cigarettes in the shed.",
+    "I got sick, my parents caught me, and I was grounded.",
+    "Yes, I stopped smoking after that.",
+  ]);
+
+  assert.equal(results[0].direction.story_resolution_status, "developing");
+  assert.equal(results[0].direction.followup_value, "high");
+  assert.match(results[0].direction.followup_reason, /consequence|conflict/i);
+  assert.equal(results[1].direction.story_resolution_status, "resolved");
+  assert.equal(results[1].direction.followup_value, "medium");
+  assert.match(results[1].direction.followup_reason, /behavior change/i);
+  assert.doesNotMatch(results[1].decision.next_question, /grounded|how long|after that week/i);
+  assertResolvedTransition(results[2]);
+  assert.equal(results[2].decision.next_question, "What came next in your childhood?");
+});
+
+test("resolved trouble with parents gets one relationship check, not an interrogation", async () => {
+  const results = await runSequence("Did you ever get into trouble when you were young?", [
+    "I broke curfew, came home late, and my parents grounded me.",
+    "No, it was settled after that.",
+  ]);
+
+  assert.equal(results[0].direction.story_resolution_status, "resolved");
+  assert.equal(results[0].direction.followup_value, "medium");
+  assert.match(results[0].direction.followup_reason, /parent relationship/i);
+  assert.equal(results[0].decision.next_question, "Was that the first time you got into serious trouble with your parents?");
+  assertResolvedTransition(results[1]);
+  assert.doesNotMatch(results[1].decision.next_question, /curfew|grounded|parents|after that/i);
+});
+
+test("minor school incident advances after its outcome is known", async () => {
+  const results = await runSequence("Was there a time you got in trouble at school?", [
+    "I passed a note in class.",
+    "The teacher caught me and I stayed after school.",
+  ]);
+
+  assert.equal(results[0].direction.story_resolution_status, "open");
+  assert.equal(results[0].direction.followup_value, "high");
+  assert.equal(results[0].decision.next_question, "What happened when you passed the note?");
+  assertResolvedTransition(results[1]);
+  assert.doesNotMatch(results[1].decision.next_question, /note|teacher|detention|stayed after/i);
+});
+
+test("first-job anecdote asks once about consequence and then returns to working life", async () => {
+  const results = await runSequence("Did anything memorable happen at your first job?", [
+    "I dropped a tray of glasses, everyone laughed, and my boss helped me clean it up.",
+    "I was more careful, but that was really it.",
+  ]);
+
+  assert.equal(results[0].direction.story_resolution_status, "resolved");
+  assert.equal(results[0].direction.followup_value, "medium");
+  assert.match(results[0].direction.followup_reason, /behavior-change|lasting consequence/i);
+  assert.equal(results[0].decision.next_question, "Did that change how you approached the job?");
+  assertResolvedTransition(results[1]);
+  assert.doesNotMatch(results[1].decision.next_question, /tray|glasses|boss|mishap/i);
+});
+
+test("resolved sports memory asks once about significance and then leaves the event", async () => {
+  const results = await runSequence("Is there a sports memory that stayed with you?", [
+    "In the championship game I scored the winning basket and we celebrated afterward.",
+    "It meant a lot to me, but after that the season was over.",
+  ]);
+
+  assert.equal(results[0].direction.story_resolution_status, "resolved");
+  assert.equal(results[0].direction.followup_value, "medium");
+  assert.match(results[0].direction.followup_reason, /significance/i);
+  assert.equal(results[0].decision.next_question, "What did winning that game mean to you then?");
+  assertResolvedTransition(results[1]);
+  assert.doesNotMatch(results[1].decision.next_question, /basket|game|celebrat/i);
+});
+
 test("Director ignores incidental nouns and follows narrative action", async () => {
   const cases = [
     {
@@ -199,12 +285,15 @@ test("Director schema is compact and cannot generate question wording", () => {
   assert.equal(Object.hasOwn(INTERVIEW_DIRECTOR_SCHEMA.properties, "next_question"), false);
   assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.chronology_status.enum, CHRONOLOGY_STATUSES);
   assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.context_opportunity.enum, CONTEXT_OPPORTUNITIES);
+  assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.followup_value.enum, FOLLOWUP_VALUES);
+  assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.story_resolution_status.enum, STORY_RESOLUTION_STATUSES);
   assert.deepEqual(Object.keys(INTERVIEW_DIRECTOR_SCHEMA.properties), INTERVIEW_DIRECTOR_SCHEMA.required);
   assert.ok(Object.keys(INTERVIEW_DIRECTOR_SCHEMA.properties).indexOf("director_note") < Object.keys(INTERVIEW_DIRECTOR_SCHEMA.properties).indexOf("chronology_status"));
   for (const field of [
     "interview_intent", "chronology_status", "approx_age_known", "approx_year_known", "place_known",
     "current_life_period", "current_topic", "story_is_emerging", "story_thread", "director_note",
-    "question_objective", "should_advance", "context_opportunity",
+    "question_objective", "followup_value", "followup_reason", "story_resolution_status",
+    "should_advance", "context_opportunity",
   ]) assert.ok(INTERVIEW_DIRECTOR_SCHEMA.required.includes(field));
   assert.deepEqual(QUESTION_WRITER_SCHEMA.required, ["next_question", "contains_unstated_personal_fact", "assumption_explanation"]);
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /understand a life, not extract keywords/i);
@@ -213,7 +302,12 @@ test("Director schema is compact and cannot generate question wording", () => {
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /MUST NOT write, draft, suggest, or return the final question/);
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /Strongly favor establishing time/);
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /stop following a predetermined checklist/i);
+  assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /Protect storyteller momentum/i);
+  assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /"More detail" is not a valid reason/i);
+  assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /If followup_value=low.*should_advance=true/i);
+  assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /story_resolution_status=resolved.*do not keep mining/i);
   assert.match(QUESTION_WRITER_INSTRUCTIONS, /may not change the selected subject or objective/i);
+  assert.match(QUESTION_WRITER_INSTRUCTIONS, /followup_value=low or story_resolution_status=resolved/i);
   assert.match(QUESTION_WRITER_INSTRUCTIONS, /usually in one short sentence/i);
 });
 

@@ -14,9 +14,13 @@ export const CHRONOLOGY_STATUSES = [
   "transitioning",
 ] as const;
 export const CONTEXT_OPPORTUNITIES = ["none", "need_age", "need_year", "need_place", "date_place_ready"] as const;
+export const FOLLOWUP_VALUES = ["high", "medium", "low"] as const;
+export const STORY_RESOLUTION_STATUSES = ["open", "developing", "resolved"] as const;
 
 export type ChronologyStatus = typeof CHRONOLOGY_STATUSES[number];
 export type ContextOpportunity = typeof CONTEXT_OPPORTUNITIES[number];
+export type FollowupValue = typeof FOLLOWUP_VALUES[number];
+export type StoryResolutionStatus = typeof STORY_RESOLUTION_STATUSES[number];
 export type StoryHistoryTurn = {
   question: string;
   answer: string;
@@ -25,6 +29,9 @@ export type StoryHistoryTurn = {
   currentTopic?: string;
   storyThread?: string;
   storyIsEmerging?: boolean;
+  followupValue?: FollowupValue;
+  followupReason?: string;
+  storyResolutionStatus?: StoryResolutionStatus;
 };
 
 type Intent = "story_answer" | "app_question" | "app_command";
@@ -45,6 +52,9 @@ export type InterviewDirectorResult = {
   story_thread: string;
   director_note: string;
   question_objective: string;
+  followup_value: FollowupValue;
+  followup_reason: string;
+  story_resolution_status: StoryResolutionStatus;
   should_advance: boolean;
   context_opportunity: ContextOpportunity;
   app_response: string;
@@ -103,6 +113,9 @@ export const INTERVIEW_DIRECTOR_SCHEMA = {
     interview_intent: { type: "string", enum: ["story_answer", "app_question", "app_command"] },
     director_note: { type: "string" },
     question_objective: { type: "string" },
+    followup_value: { type: "string", enum: FOLLOWUP_VALUES },
+    followup_reason: { type: "string" },
+    story_resolution_status: { type: "string", enum: STORY_RESOLUTION_STATUSES },
     story_thread: { type: "string" },
     current_life_period: { type: "string" },
     current_topic: { type: "string" },
@@ -118,7 +131,8 @@ export const INTERVIEW_DIRECTOR_SCHEMA = {
     entities: entitiesSchema,
   },
   required: [
-    "interview_intent", "director_note", "question_objective", "story_thread", "current_life_period",
+    "interview_intent", "director_note", "question_objective", "followup_value", "followup_reason",
+    "story_resolution_status", "story_thread", "current_life_period",
     "current_topic", "story_is_emerging", "should_advance", "chronology_status", "approx_age_known",
     "approx_year_known", "place_known", "context_opportunity", "app_response", "command", "entities",
   ],
@@ -151,6 +165,9 @@ function contextInput(args: TurnArgs) {
     `TOPIC: ${turn.currentTopic ?? "unknown"}`,
     `STORY_THREAD: ${turn.storyThread ?? "unknown"}`,
     `STORY_EMERGING: ${turn.storyIsEmerging ?? "unknown"}`,
+    `FOLLOWUP_VALUE: ${turn.followupValue ?? "unknown"}`,
+    `FOLLOWUP_REASON: ${turn.followupReason ?? "unknown"}`,
+    `STORY_RESOLUTION_STATUS: ${turn.storyResolutionStatus ?? "unknown"}`,
     `Q: ${turn.question}`,
     `A: ${turn.answer}`,
   ].join("\n")).join("\n\n");
@@ -179,6 +196,9 @@ function appDirector(
     question_objective: skipping
       ? "Move forward with one broad grounded life-story question without inventing a new subject."
       : "Resume the exact current interview question after handling the app request.",
+    followup_value: "low",
+    followup_reason: "An app request does not create a story follow-up; preserve the interrupted story position.",
+    story_resolution_status: "open",
     should_advance: skipping,
     context_opportunity: "none",
     app_response: appResponse,
@@ -200,6 +220,9 @@ function storyDirector(overrides: Partial<InterviewDirectorResult> = {}): Interv
     story_thread: "the next event in the supplied account",
     director_note: "The account is not yet anchored or developed into an event, so continue chronologically without introducing a subject.",
     question_objective: "Ask what happened next in the supplied account.",
+    followup_value: "medium",
+    followup_reason: "Meaningful chronology may reveal the next event in the supplied account.",
+    story_resolution_status: "open",
     should_advance: true,
     context_opportunity: "none",
     app_response: "",
@@ -242,6 +265,188 @@ function mockDirector(args: TurnArgs): InterviewDirectorResult {
 
   const ageKnown = hasApproxAge(allText);
   const yearKnown = hasApproxYear(allText);
+
+  const smokingMischiefCurrent = /\b(?:smok(?:e|ed|ing)|shed|cigarettes?)\b/i.test(`${transcript} ${args.currentQuestion}`) ||
+    priorTopic === "smoking in the shed";
+  if (smokingMischiefCurrent) {
+    const base = {
+      chronology_status: ageKnown ? "partially_anchored" as const : "unanchored" as const,
+      approx_age_known: ageKnown,
+      approx_year_known: yearKnown,
+      current_life_period: "childhood",
+      current_topic: "smoking in the shed",
+      story_is_emerging: true,
+      story_thread: "the childhood smoking incident and its consequences",
+      context_opportunity: "none" as const,
+    };
+    if (/\b(?:stopped|quit|never|did not|didn't)\b.*\bsmok/i.test(transcript) ||
+        /did getting caught change/i.test(question)) {
+      return storyDirector({
+        ...base,
+        story_is_emerging: false,
+        director_note: "The incident and its behavioral consequence are both resolved. Another incident-level question would only prolong an understood story, so return to the broader childhood chronology.",
+        question_objective: "Move forward to the next meaningful part of the storyteller's childhood.",
+        followup_value: "low",
+        followup_reason: "Staying with the incident is unlikely to reveal a new dimension after its outcome and behavior change are known.",
+        story_resolution_status: "resolved",
+        should_advance: true,
+      });
+    }
+    if (/\b(?:got sick|felt sick|caught|grounded)\b/i.test(transcript)) {
+      return storyDirector({
+        ...base,
+        director_note: "The smoking incident now has a clear outcome. One focused behavior-change question has value; generic questions about the grounding or what happened immediately afterward do not.",
+        question_objective: "Determine whether getting caught changed the storyteller's smoking behavior afterward.",
+        followup_value: "medium",
+        followup_reason: "A single question about behavior change can reveal a consequence beyond the already-resolved incident.",
+        story_resolution_status: "resolved",
+        should_advance: false,
+      });
+    }
+    return storyDirector({
+      ...base,
+      director_note: "A concrete childhood incident has begun but no outcome is supplied. Follow its central action once to learn the consequence, without probing the shed or cigarettes as objects.",
+      question_objective: "Invite the storyteller to say how the childhood smoking incident unfolded.",
+      followup_value: "high",
+      followup_reason: "The unresolved action is likely to reveal a consequence or conflict.",
+      story_resolution_status: "developing",
+      should_advance: false,
+    });
+  }
+
+  const parentTroubleCurrent = /\b(?:broke curfew|came home late|trouble with (?:my )?parents|parents? (?:caught|grounded))\b/i.test(`${transcript} ${args.currentQuestion}`) ||
+    priorTopic === "trouble with parents";
+  if (parentTroubleCurrent) {
+    const base = {
+      chronology_status: ageKnown ? "partially_anchored" as const : "unanchored" as const,
+      approx_age_known: ageKnown,
+      current_life_period: "the storyteller's youth",
+      current_topic: "trouble with parents",
+      story_thread: "the established conflict with the storyteller's parents",
+      story_resolution_status: "resolved" as const,
+      context_opportunity: "none" as const,
+    };
+    if (/first time.*trouble/i.test(question) || /\b(?:settled|that was (?:really )?it|nothing (?:else|more))\b/i.test(transcript)) {
+      return storyDirector({
+        ...base,
+        story_is_emerging: false,
+        director_note: "The parent conflict is resolved and the final relationship check opened no richer thread. Protect momentum by returning to the broader period of the storyteller's youth.",
+        question_objective: "Advance to the next meaningful part of the storyteller's youth.",
+        followup_value: "low",
+        followup_reason: "Another question about the resolved conflict would likely produce only incident detail.",
+        should_advance: true,
+      });
+    }
+    return storyDirector({
+      ...base,
+      story_is_emerging: true,
+      director_note: "The curfew incident has an outcome. One focused chronology-and-relationship question may show whether it marked a larger pattern; do not mine the punishment itself.",
+      question_objective: "Determine whether this was the storyteller's first serious trouble with their parents.",
+      followup_value: "medium",
+      followup_reason: "One focused question may locate the incident within an established parent relationship.",
+      should_advance: false,
+    });
+  }
+
+  const schoolIncidentCurrent = /\b(?:passing|passed) (?:a )?note\b|\bstay(?:ed)? after school\b/i.test(`${transcript} ${args.currentQuestion}`) ||
+    priorTopic === "minor school incident";
+  if (schoolIncidentCurrent) {
+    if (/\b(?:caught|stay(?:ed)? after school|detention)\b/i.test(transcript)) {
+      return storyDirector({
+        chronology_status: ageKnown ? "partially_anchored" : "unanchored",
+        approx_age_known: ageKnown,
+        current_life_period: "school years",
+        current_topic: "minor school incident",
+        story_is_emerging: false,
+        story_thread: "the resolved note-passing incident",
+        director_note: "The minor school incident already has an action and outcome, with no larger consequence supplied. A further incident question would only seek more detail, so move back to the school-years story.",
+        question_objective: "Return to the broader school-years story and invite the next meaningful experience from that period.",
+        followup_value: "low",
+        followup_reason: "The resolved minor incident offers no supplied sign of a larger consequence, relationship, or turning point.",
+        story_resolution_status: "resolved",
+        should_advance: true,
+      });
+    }
+    return storyDirector({
+      current_life_period: "school years",
+      current_topic: "minor school incident",
+      story_is_emerging: true,
+      story_thread: "the unresolved note-passing incident",
+      director_note: "The storyteller has begun a concrete school incident without giving its outcome. One question about the central action may complete it.",
+      question_objective: "Ask what happened when the storyteller passed the note in class.",
+      followup_value: "high",
+      followup_reason: "The unresolved action is likely to reveal the incident's consequence.",
+      story_resolution_status: "open",
+      should_advance: false,
+    });
+  }
+
+  const firstJobAnecdoteCurrent = /\b(?:dropped|broke)\b.*\b(?:tray|glasses?|dishes?)\b/i.test(`${historyText} ${transcript}`) ||
+    priorTopic === "first job anecdote";
+  if (firstJobAnecdoteCurrent) {
+    if (/\b(?:more careful|that was (?:really )?it|nothing (?:else|more))\b/i.test(transcript) ||
+        /change how you approached/i.test(question)) {
+      return storyDirector({
+        chronology_status: "partially_anchored",
+        current_life_period: "early working life",
+        current_topic: "first job anecdote",
+        story_is_emerging: false,
+        story_thread: "the resolved first-job mishap",
+        director_note: "The workplace mishap and its effect on the storyteller are understood. No new thread emerged, so move forward in the working-life chronology.",
+        question_objective: "Move forward to the next meaningful development in the storyteller's working life.",
+        followup_value: "low",
+        followup_reason: "Another question about the mishap would repeat an already-supplied consequence.",
+        story_resolution_status: "resolved",
+        should_advance: true,
+      });
+    }
+    return storyDirector({
+      chronology_status: "partially_anchored",
+      current_life_period: "early working life",
+      current_topic: "first job anecdote",
+      story_is_emerging: true,
+      story_thread: "the resolved mishap at the storyteller's first job",
+      director_note: "The job anecdote has a complete outcome. One focused consequence question may show whether it changed the storyteller's behavior at work; avoid asking for more mishap detail.",
+      question_objective: "Determine whether the first-job mishap changed how the storyteller approached the job afterward.",
+      followup_value: "medium",
+      followup_reason: "A behavior-change question can reveal a lasting consequence of the resolved anecdote.",
+      story_resolution_status: "resolved",
+      should_advance: false,
+    });
+  }
+
+  const sportsMemoryCurrent = /\b(?:championship game|winning basket|winning goal)\b/i.test(`${historyText} ${transcript}`) ||
+    priorTopic === "sports memory";
+  if (sportsMemoryCurrent) {
+    if (/\bseason was over\b|\bthat was (?:really )?it\b/i.test(transcript) || /what did winning.*mean/i.test(question)) {
+      return storyDirector({
+        chronology_status: "partially_anchored",
+        current_life_period: "the period of the storyteller's sport",
+        current_topic: "sports memory",
+        story_is_emerging: false,
+        story_thread: "the completed sports season",
+        director_note: "The game, its meaning, and the end of the season are established. Further game questions would diminish momentum, so move forward beyond that sports period.",
+        question_objective: "Move forward to what came next in the storyteller's life after that sports season.",
+        followup_value: "low",
+        followup_reason: "The memorable event and its significance are complete, leaving no important unresolved thread.",
+        story_resolution_status: "resolved",
+        should_advance: true,
+      });
+    }
+    return storyDirector({
+      chronology_status: "partially_anchored",
+      current_life_period: "the period of the storyteller's sport",
+      current_topic: "sports memory",
+      story_is_emerging: true,
+      story_thread: "the championship-game memory",
+      director_note: "The championship game has a complete outcome. One concise significance question may reveal why it belongs in the life story; do not ask for play-by-play detail.",
+      question_objective: "Learn what winning the established championship game meant to the storyteller at the time.",
+      followup_value: "medium",
+      followup_reason: "A significance question may reveal why this resolved event remains memorable.",
+      story_resolution_status: "resolved",
+      should_advance: false,
+    });
+  }
 
   const boxingCurrent = /\bbox(?:ed|ing)?\b/.test(`${transcript} ${args.currentQuestion}`) || priorTopic === "boxing";
   if (boxingCurrent) {
@@ -575,6 +780,17 @@ export async function directNextTurn(args: TurnArgs): Promise<InterviewDirectorR
 
 function mockQuestion(direction: InterviewDirectorResult): string {
   switch (direction.question_objective) {
+    case "Invite the storyteller to say how the childhood smoking incident unfolded.": return "What happened with the smoking incident?";
+    case "Determine whether getting caught changed the storyteller's smoking behavior afterward.": return "Did getting caught change what you did after that?";
+    case "Move forward to the next meaningful part of the storyteller's childhood.": return "What came next in your childhood?";
+    case "Determine whether this was the storyteller's first serious trouble with their parents.": return "Was that the first time you got into serious trouble with your parents?";
+    case "Advance to the next meaningful part of the storyteller's youth.": return "What was the next important change in your youth?";
+    case "Ask what happened when the storyteller passed the note in class.": return "What happened when you passed the note?";
+    case "Return to the broader school-years story and invite the next meaningful experience from that period.": return "What other school experience mattered to you around then?";
+    case "Determine whether the first-job mishap changed how the storyteller approached the job afterward.": return "Did that change how you approached the job?";
+    case "Move forward to the next meaningful development in the storyteller's working life.": return "What came next in your working life?";
+    case "Learn what winning the established championship game meant to the storyteller at the time.": return "What did winning that game mean to you then?";
+    case "Move forward to what came next in the storyteller's life after that sports season.": return "What came next in your life after that season?";
     case "Establish how old the storyteller was when they began boxing.": return "How old were you when you started boxing?";
     case "Learn how the storyteller first got into boxing.": return "How did you first get into boxing?";
     case "Explore how the storyteller's brother got them started in boxing.": return "How did your brother get you started?";
@@ -651,6 +867,9 @@ function storyDecision(direction: InterviewDirectorResult, writer: QuestionWrite
     decision.story_thread = "the next event in the supplied account";
     decision.director_note = "The drafted question was not fully grounded, so fail closed to a broad chronological continuation.";
     decision.question_objective = "Ask what happened next without introducing a new personal fact.";
+    decision.followup_value = "low";
+    decision.followup_reason = "The drafted follow-up was unsafe, so no event-specific continuation can be justified.";
+    decision.story_resolution_status = "resolved";
     decision.should_advance = true;
     decision.context_opportunity = "none";
     decision.next_question = "What happened next?";
