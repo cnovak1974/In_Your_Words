@@ -6,11 +6,9 @@ import { db, healthCheckDb } from "./db.js";
 import { transcribeRemoteAudio } from "./deepgram.js";
 import { synthesizeSpeech } from "./elevenlabs.js";
 import {
-  LIFE_STAGES,
-  QUESTION_STRATEGIES,
+  CHRONOLOGY_STATUSES,
   decideNextTurn,
-  type LifeStage,
-  type QuestionStrategy,
+  type ChronologyStatus,
 } from "./openaiInterview.js";
 import {
   confirmObject, createReadUrl, createUploadUrl, mockObjectContentTypes, mockObjects,
@@ -134,12 +132,12 @@ app.post("/api/turns/:id/process", async (req, res) => {
     const transcript = await transcribeRemoteAudio(audioUrl);
 
     const historyResult = await db.query(
-      `select question_text, transcript, ai_payload->>'strategy' as strategy,
-              ai_payload->>'life_stage' as life_stage,
+      `select question_text, transcript,
+              ai_payload->>'chronology_status' as chronology_status,
+              ai_payload->>'current_life_period' as current_life_period,
               ai_payload->>'current_topic' as current_topic,
-              ai_payload->>'next_topic_beat' as next_topic_beat,
-              ai_payload->>'topic_complete' as topic_complete,
-              ai_payload->>'return_to_life_roadmap' as return_to_life_roadmap
+              ai_payload->>'story_thread' as story_thread,
+              ai_payload->>'story_is_emerging' as story_is_emerging
        from turns
        where session_id=$1 and intent='story_answer' and transcript is not null and id <> $2
        order by created_at desc limit 50`,
@@ -148,21 +146,21 @@ app.post("/api/turns/:id/process", async (req, res) => {
     const storyHistory = historyResult.rows.reverse().map((r: {
       question_text: string;
       transcript: string;
-      strategy?: string | null;
-      life_stage?: string | null;
+      chronology_status?: string | null;
+      current_life_period?: string | null;
       current_topic?: string | null;
-      next_topic_beat?: string | null;
-      topic_complete?: string | null;
-      return_to_life_roadmap?: string | null;
+      story_thread?: string | null;
+      story_is_emerging?: string | null;
     }) => ({
       question: r.question_text,
       answer: r.transcript,
-      strategy: QUESTION_STRATEGIES.includes(r.strategy as QuestionStrategy) ? r.strategy as QuestionStrategy : undefined,
-      lifeStage: LIFE_STAGES.includes(r.life_stage as LifeStage) ? r.life_stage as LifeStage : undefined,
+      chronologyStatus: CHRONOLOGY_STATUSES.includes(r.chronology_status as ChronologyStatus)
+        ? r.chronology_status as ChronologyStatus
+        : undefined,
+      currentLifePeriod: r.current_life_period ?? undefined,
       currentTopic: r.current_topic ?? undefined,
-      nextTopicBeat: r.next_topic_beat,
-      topicComplete: r.topic_complete == null ? undefined : r.topic_complete === "true",
-      returnToLifeRoadmap: r.return_to_life_roadmap == null ? undefined : r.return_to_life_roadmap === "true",
+      storyThread: r.story_thread ?? undefined,
+      storyIsEmerging: r.story_is_emerging == null ? undefined : r.story_is_emerging === "true",
     }));
 
     const decision = await decideNextTurn({
