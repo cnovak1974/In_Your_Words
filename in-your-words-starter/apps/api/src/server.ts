@@ -15,12 +15,18 @@ import {
 } from "./newsreel.js";
 import {
   CHRONOLOGY_STATUSES,
+  DOMAIN_STATUS_VALUES,
   FOLLOWUP_VALUES,
+  LIFE_DOMAIN_VALUES,
+  LIFE_PERIOD_VALUES,
   STORY_IMPORTANCE_VALUES,
   STORY_RESOLUTION_STATUSES,
   decideNextTurn,
   type ChronologyStatus,
+  type DomainStatus,
   type FollowupValue,
+  type LifeDomain,
+  type LifePeriod,
   type StoryImportance,
   type StoryResolutionStatus,
 } from "./openaiInterview.js";
@@ -246,6 +252,13 @@ app.post("/api/turns/:id/process", async (req, res) => {
               ai_payload->>'followup_budget' as followup_budget,
               ai_payload->>'followup_budget_remaining' as followup_budget_remaining,
               ai_payload->>'should_advance' as should_advance,
+              ai_payload->>'life_period' as life_period,
+              ai_payload->>'current_domain' as current_domain,
+              ai_payload->>'domain_status' as domain_status,
+              ai_payload->>'domain_goal' as domain_goal,
+              ai_payload->'domains_completed' as domains_completed,
+              ai_payload->'domains_remaining' as domains_remaining,
+              ai_payload->>'should_transition_domain' as should_transition_domain,
               ai_payload->'newsreel_candidate' as newsreel_candidate
        from turns
        where session_id=$1 and intent='story_answer' and transcript is not null and id <> $2
@@ -270,6 +283,13 @@ app.post("/api/turns/:id/process", async (req, res) => {
       followup_budget?: string | null;
       followup_budget_remaining?: string | null;
       should_advance?: string | null;
+      life_period?: string | null;
+      current_domain?: string | null;
+      domain_status?: string | null;
+      domain_goal?: string | null;
+      domains_completed?: unknown;
+      domains_remaining?: unknown;
+      should_transition_domain?: string | null;
       newsreel_candidate?: unknown;
     }) => ({
       question: r.question_text,
@@ -299,6 +319,23 @@ app.post("/api/turns/:id/process", async (req, res) => {
         ? undefined
         : Number(r.followup_budget_remaining),
       shouldAdvance: r.should_advance == null ? undefined : r.should_advance === "true",
+      lifePeriod: LIFE_PERIOD_VALUES.includes(r.life_period as LifePeriod)
+        ? r.life_period as LifePeriod
+        : undefined,
+      currentDomain: LIFE_DOMAIN_VALUES.includes(r.current_domain as LifeDomain)
+        ? r.current_domain as LifeDomain
+        : undefined,
+      domainStatus: DOMAIN_STATUS_VALUES.includes(r.domain_status as DomainStatus)
+        ? r.domain_status as DomainStatus
+        : undefined,
+      domainGoal: r.domain_goal ?? undefined,
+      domainsCompleted: Array.isArray(r.domains_completed)
+        ? r.domains_completed.filter((domain): domain is LifeDomain => LIFE_DOMAIN_VALUES.includes(domain as LifeDomain))
+        : undefined,
+      domainsRemaining: Array.isArray(r.domains_remaining)
+        ? r.domains_remaining.filter((domain): domain is LifeDomain => LIFE_DOMAIN_VALUES.includes(domain as LifeDomain))
+        : undefined,
+      shouldTransitionDomain: r.should_transition_domain == null ? undefined : r.should_transition_domain === "true",
     }));
     const candidateHistoryResult = await db.query(
       `select ai_payload->'newsreel_candidate' as newsreel_candidate
@@ -419,6 +456,13 @@ app.post("/api/turns/:id/process", async (req, res) => {
         followup_budget_remaining: 0,
         should_advance: false,
         context_opportunity: "none",
+        life_period: "other",
+        current_domain: "other",
+        domain_status: "not_started",
+        domain_goal: "Resume the interrupted life-domain position.",
+        domains_completed: [],
+        domains_remaining: [],
+        should_transition_domain: false,
       };
       const aiPayload: Record<string, unknown> = {
         ...preservedState,
@@ -557,4 +601,3 @@ app.post("/api/tts", async (req, res) => {
 export const server = app.listen(config.port, "0.0.0.0", () => {
   console.log(JSON.stringify({ level: "info", event: "server_started", port: config.port, mode: appMode, providers }));
 });
-

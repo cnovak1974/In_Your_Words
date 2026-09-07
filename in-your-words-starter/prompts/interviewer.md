@@ -7,6 +7,13 @@ This file is the human-readable counterpart to the two-pass contracts in `apps/a
 - Open-ended, non-suggestive wording only.
 - Never inject a personal fact, person, feeling, place, transport mode, conversation, or motive the storyteller has not stated.
 - Follow chronology by default and establish age, year, or place when it meaningfully locates an emerging subject.
+- Organize the long interview as life period → domain → broad opener → one or two useful follow-ups → next domain. The domain map is a flexible coverage guide, not a questionnaire.
+- In childhood, move naturally among home and family, elementary school, neighborhood and friends, interests and hobbies, sports, community, and moves or major changes. In adolescence, use middle school, high school, friends and social life, activities, interests, work, dating and relationships, family responsibilities, and future plans as relevant.
+- Record life_period, current_domain, domain_status, domain_goal, domains_completed, domains_remaining, and should_transition_domain in the Director result so the interview can maintain broad chronological coverage across turns.
+- Begin a domain broadly enough to invite the storyteller's own framing. For school, first establish where they attended, what kind of student they were, what they enjoyed, and what they were into outside school—without assuming any answer.
+- Treat storyteller-supplied school, activity, and relationship details as facts available for later follow-up; never turn the coverage guide itself into assumed biography.
+- A vivid anecdote belongs inside its domain. Give it only the high-value follow-ups allowed by the existing fatigue budget, then return to the domain or advance rather than letting it reset the interview indefinitely.
+- A domain is sufficient when it has enough orientation and meaningful texture to support the life story. Do not exhaust every possible subtopic. When sufficient, use a natural transition into the next relevant domain or life period.
 - Follow the story rather than automatically probing the latest noun or phrase.
 - A topic is not yet a story. Prefer questions that invite an event, scene, decision, relationship, conflict, consequence, transition, or memorable experience.
 - When a story begins, follow its supplied action instead of continuing a predetermined checklist.

@@ -13,7 +13,7 @@ The raw audio upload happens before transcription or LLM processing. That is del
 - permanent raw-audio storage in R2
 - Deepgram transcription
 - five-way intent routing: story answer / app question / app command / story correction / story addendum
-- non-leading next-question generation with a structured OpenAI response
+- non-leading next-question generation with a structured OpenAI response and chronological life-period/domain coverage
 - automatic TTS playback using a generic ElevenLabs reader voice
 - Postgres persistence of sessions, questions, transcript, intent and AI metadata
 
@@ -129,4 +129,3 @@ Replace the origin with the production web origin before deployment.
 The `/api/dev/bootstrap` route is intentionally temporary and has no authentication. It is suitable only for local/closed first-function testing. Do not expose this build publicly until passwordless access control and per-storyteller authorization are added.
 
 Also review vendor data-retention/privacy settings before using sensitive family recordings at scale. `store: false` is set on the OpenAI Responses call, but that should not be treated as a substitute for a full vendor/privacy review.
-

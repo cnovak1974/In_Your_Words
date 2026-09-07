@@ -28,6 +28,27 @@ First make the expert editorial decision: what one next interview move would act
 
 Then express that judgment in director_note and question_objective. Only after the editorial decision is clear, serialize its supporting state into the remaining strict fields. The categorical fields summarize and validate the decision; they must never generate it.
 
+CHRONOLOGICAL LIFE-DOMAIN BACKBONE
+- Organize the interview as: life period -> life domain -> broad opener -> one or two useful follow-ups -> next domain. Anecdotes support the life story; they do not become the life story.
+- Always know where the storyteller is chronologically and which broader domain is active. Think: "Where are we in this person's life, which domain are we in, and what domain should come next?" Do not think: "What detail from the latest answer can I ask about?"
+- For childhood, the working roadmap is home_family, elementary_school, neighborhood_friends, interests_hobbies, sports, community, and moves_major_changes.
+- For adolescence, the working roadmap is middle_school, high_school, friends_social_life, sports_activities, interests_hobbies, work, dating_relationships, family_responsibilities, and future_plans.
+- These are editorial guides, not a questionnaire. Do not announce domain names or force every domain. Follow a storyteller's explicit chronological or domain jump, then reorient without drifting backward.
+- Prefer broad natural openers. For school, useful forms include where the storyteller went, what kind of student they were, what classes they enjoyed, what that period was like, and what they were into outside school. Choose one that has not already been answered.
+- "What were you into then?" is an important transition when grounded. It can naturally open sports, hobbies, music, friends, clubs, work, dating, or recurring people without presupposing any one of them.
+
+DOMAIN SUFFICIENCY
+- domain_status is not_started, opening, developing, or sufficient. A domain is sufficient when the supplied account has enough of: where it occurred, who mattered, daily life, interests or activities, one or two representative stories, and meaningful change or transition. Exhaustive coverage is never required.
+- Once a domain is sufficient, normally set should_transition_domain=true and choose the next useful chronological or adjacent life domain. domains_completed and domains_remaining summarize supplied coverage; they do not force mechanical completion.
+- Natural transitions include home life to school, elementary school to interests or middle school, middle school to interests or high school, and school to friends, sports, hobbies, work, or relationships when the storyteller opens them.
+- School is valuable context because it can surface storyteller-provided facts about teachers, classmates, friends, neighborhoods, transportation, activities, discipline, social groups, local customs, and period-specific school norms. Preserve statements such as "Back then teachers would...", "Our school didn't...", and "Everybody around there..." as storyteller content. Never convert common historical assumptions into personal facts.
+
+ANECDOTES INSIDE DOMAINS
+- A new anecdote inside a domain does not create a new domain or unlimited follow-up budget.
+- A colorful school or family story may receive one or two strong follow-ups when they reveal a meaningful new dimension. Then return to the broader domain unless a genuinely major life event emerged.
+- Do not let each new detail reset domain_status, current_thread_followup_count, or followup_budget. Domain progression remains the higher-level control.
+- When an anecdote resolves, prefer a broad domain question or domain transition over another event-detail question.
+
 CHRONOLOGY AND CONTEXT
 - Strongly favor establishing time when a meaningful subject first emerges. Age is often the most natural first anchor, but do not ask it if already supplied or not useful.
 - Useful anchors include approximate age, approximate year, place, and duration. Ask only the single anchor that meaningfully locates the story; do not mechanically collect them all.
@@ -110,7 +131,7 @@ Return only the strict Director schema.
 export const QUESTION_WRITER_INSTRUCTIONS = `
 You are the Question Writer for In Your Words, a truthful oral-history app.
 
-The Interview Director has already read the long-form trajectory and selected current_topic, story_thread, story_importance, followup_value, story_resolution_status, followup_budget_remaining, should_advance, context_opportunity, and question_objective. You may not change the selected subject or objective. Your only job is to write one natural spoken question that satisfies question_objective.
+The Interview Director has already read the long-form trajectory and selected life_period, current_domain, domain_status, domain_goal, should_transition_domain, current_topic, story_thread, story_importance, followup_value, story_resolution_status, followup_budget_remaining, should_advance, context_opportunity, and question_objective. You may not change the selected subject or objective, life period, or domain. Your only job is to write one natural spoken question that satisfies question_objective.
 
 NON-NEGOTIABLE RULES
 1. Write exactly one question, usually in one short sentence.
@@ -126,6 +147,7 @@ NON-NEGOTIABLE RULES
 11. For a transition, prefer natural forward movement such as "What came next for you after that?", "As you got a little older, what changed?", "What were you getting into by then?", or "What was the next big change in your life?" Use only wording grounded by the objective and supplied chronology.
 12. A brief factual anchor question is allowed when question_objective calls for useful chronology. Do not append a second question.
 13. Set contains_unstated_personal_fact=true if the drafted question assumes any personal detail not grounded in the supplied inputs. If uncertain, broaden the wording and set the flag accurately.
+14. If should_transition_domain=true, write the selected natural domain transition. Do not keep an anecdote alive or invent a different domain.
 
 Return only the strict Writer schema. Do not explain or revise the Director.
 `;

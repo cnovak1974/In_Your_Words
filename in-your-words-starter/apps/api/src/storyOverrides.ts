@@ -24,7 +24,9 @@ export type DirectorStateSnapshot = Pick<InterviewDecision,
   "current_life_period" | "current_topic" | "story_is_emerging" | "story_thread" |
   "director_note" | "question_objective" | "followup_value" | "followup_reason" |
   "story_resolution_status" | "story_importance" | "current_thread_followup_count" |
-  "followup_budget" | "followup_budget_remaining" | "should_advance" | "context_opportunity">;
+  "followup_budget" | "followup_budget_remaining" | "should_advance" | "context_opportunity" |
+  "life_period" | "current_domain" | "domain_status" | "domain_goal" | "domains_completed" |
+  "domains_remaining" | "should_transition_domain">;
 
 export type InterviewBookmark = {
   current_question: string;
@@ -180,6 +182,13 @@ export function createInterviewBookmark(args: {
     followup_budget_remaining: decision.followup_budget_remaining,
     should_advance: decision.should_advance,
     context_opportunity: decision.context_opportunity,
+    life_period: decision.life_period ?? "other",
+    current_domain: decision.current_domain ?? "other",
+    domain_status: decision.domain_status ?? "not_started",
+    domain_goal: decision.domain_goal ?? "Preserve the interrupted life-domain position.",
+    domains_completed: [...(decision.domains_completed ?? [])],
+    domains_remaining: [...(decision.domains_remaining ?? [])],
+    should_transition_domain: decision.should_transition_domain ?? false,
   } : null;
   return {
     current_question: args.currentQuestion,
@@ -537,4 +546,3 @@ export function isStoryOverrideInteraction(value: unknown): value is StoryOverri
     OVERRIDE_INTERACTION_STATUSES.includes(interaction.status as OverrideInteractionStatus) &&
     typeof interaction.interaction_id === "string" && Boolean(interaction.bookmark);
 }
-

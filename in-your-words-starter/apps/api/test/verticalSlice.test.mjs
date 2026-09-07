@@ -7,9 +7,13 @@ process.env.PUBLIC_API_URL = "http://127.0.0.1:10001";
 const { server } = await import("../dist/server.js");
 const {
   CHRONOLOGY_STATUSES,
+  CHILDHOOD_DOMAINS,
   CONTEXT_OPPORTUNITIES,
+  DOMAIN_STATUS_VALUES,
   FOLLOWUP_VALUES,
   INTERVIEW_DIRECTOR_SCHEMA,
+  LIFE_DOMAIN_VALUES,
+  LIFE_PERIOD_VALUES,
   QUESTION_WRITER_SCHEMA,
   STORY_IMPORTANCE_VALUES,
   STORY_RESOLUTION_STATUSES,
@@ -39,6 +43,13 @@ function historyTurn(args, decision) {
     followupBudget: decision.followup_budget,
     followupBudgetRemaining: decision.followup_budget_remaining,
     shouldAdvance: decision.should_advance,
+    lifePeriod: decision.life_period,
+    currentDomain: decision.current_domain,
+    domainStatus: decision.domain_status,
+    domainGoal: decision.domain_goal,
+    domainsCompleted: decision.domains_completed,
+    domainsRemaining: decision.domains_remaining,
+    shouldTransitionDomain: decision.should_transition_domain,
   };
 }
 
@@ -344,6 +355,129 @@ test("Director ignores incidental nouns and follows narrative action", async () 
   }
 });
 
+test("elementary school progresses broadly instead of mining one answer", async () => {
+  const results = await runSequence("What was elementary school like for you?", [
+    "I went to Lincoln Elementary.",
+    "I was quiet but curious.",
+    "I enjoyed science and reading.",
+  ]);
+  assert.equal(results[0].direction.current_domain, "elementary_school");
+  assert.equal(results[0].direction.domain_status, "opening");
+  assert.equal(results[0].decision.next_question, "What kind of student were you?");
+  assert.equal(results[1].direction.domain_status, "developing");
+  assert.equal(results[1].decision.next_question, "What classes did you enjoy?");
+  assert.equal(results[2].direction.domain_status, "sufficient");
+  assert.equal(results[2].direction.should_transition_domain, true);
+  assert.equal(results[2].decision.next_question, "What were you into outside of school?");
+});
+
+test("middle school progresses from place to period to interests", async () => {
+  const results = await runSequence("Where did you go to middle school?", [
+    "I went to Roosevelt Middle School.",
+    "It was a time when I became more independent.",
+  ]);
+  assert.equal(results[0].direction.life_period, "adolescence");
+  assert.equal(results[0].direction.current_domain, "middle_school");
+  assert.equal(results[0].decision.next_question, "What was that period like for you?");
+  assert.equal(results[1].direction.domain_status, "developing");
+  assert.equal(results[1].direction.should_transition_domain, true);
+  assert.equal(results[1].decision.next_question, "What were you into then?");
+});
+
+test("high school progresses through broad student context", async () => {
+  const results = await runSequence("Where did you go to high school?", [
+    "I went to Central High.",
+    "I was a serious student by then.",
+    "I liked history and art.",
+  ]);
+  assert.equal(results[0].direction.current_domain, "high_school");
+  assert.equal(results[0].decision.next_question, "What kind of student were you by then?");
+  assert.equal(results[1].decision.next_question, "What classes did you like?");
+  assert.equal(results[2].direction.domain_status, "sufficient");
+  assert.equal(results[2].decision.next_question, "What were you into outside of school?");
+});
+
+test("school transitions naturally into a supplied sport or hobby", async () => {
+  const results = await runSequence("What was elementary school like for you?", [
+    "I went to Lincoln Elementary.",
+    "I was an average student.",
+    "I liked math.",
+    "Outside school I played baseball.",
+  ]);
+  assert.equal(results[3].direction.current_domain, "sports");
+  assert.equal(results[3].direction.domain_status, "opening");
+  assert.equal(results[3].decision.next_question, "How did you first get into that?");
+});
+
+test("school transitions naturally into friends and social life", async () => {
+  const results = await runSequence("What was elementary school like for you?", [
+    "I went to Lincoln Elementary.",
+    "I was fairly outgoing.",
+    "I liked art class.",
+    "Outside school I spent most of my time with friends from the neighborhood.",
+  ]);
+  assert.equal(results[3].direction.current_domain, "neighborhood_friends");
+  assert.equal(results[3].decision.next_question, "What did you and your friends usually do together?");
+});
+
+test("home life becomes sufficient and transitions to school", async () => {
+  const results = await runSequence("What was family life like when you were young?", [
+    "I lived with my parents and two sisters.",
+    "We ate together and everyone had chores.",
+  ]);
+  assert.equal(results[0].direction.current_domain, "home_family");
+  assert.equal(results[0].decision.next_question, "What did everyday life at home look like for you?");
+  assert.equal(results[1].direction.domain_status, "sufficient");
+  assert.equal(results[1].direction.should_transition_domain, true);
+  assert.equal(results[1].decision.next_question, "What was elementary school like for you?");
+});
+
+test("a school anecdote gets one useful follow-up and cannot trap the domain", async () => {
+  const results = await runSequence("What was elementary school like for you?", [
+    "I went to Lincoln Elementary.",
+    "I passed a note, the teacher caught me, and I stayed after school.",
+    "No, it did not change much about school for me.",
+  ]);
+  assert.equal(results[1].direction.current_domain, "elementary_school");
+  assert.equal(results[1].direction.followup_budget, 1);
+  assert.equal(results[1].decision.next_question, "Did that change anything about school for you?");
+  assert.equal(results[2].direction.domain_status, "sufficient");
+  assert.equal(results[2].direction.followup_budget_remaining, 0);
+  assert.equal(results[2].decision.next_question, "What were you into outside of school?");
+  assert.doesNotMatch(results[2].decision.next_question, /note|teacher|stayed after/i);
+});
+
+test("what were you into then opens a supplied activity domain", async () => {
+  const results = await runSequence("What were you into then?", ["I played basketball after school."]);
+  assert.equal(results[0].direction.current_domain, "sports");
+  assert.equal(results[0].direction.domain_status, "opening");
+  assert.equal(results[0].decision.next_question, "How did you first get into that?");
+});
+
+test("Director records completed and remaining domains when advancing", async () => {
+  const results = await runSequence("What was elementary school like for you?", [
+    "I went to Lincoln Elementary.",
+    "I was a quiet student.",
+    "I liked reading.",
+  ]);
+  const final = results[2].direction;
+  assert.ok(final.domains_completed.includes("elementary_school"));
+  assert.ok(final.domains_remaining.includes("interests_hobbies"));
+  assert.equal(final.should_transition_domain, true);
+});
+
+test("an explicit chronological domain jump reorients without drifting backward", async () => {
+  const results = await runSequence("What was elementary school like for you?", [
+    "I went to Lincoln Elementary.",
+    "By high school I was working at a grocery store.",
+  ]);
+  assert.equal(results[1].direction.life_period, "adolescence");
+  assert.equal(results[1].direction.current_domain, "work");
+  assert.match(results[1].direction.director_note, /explicitly moved|reorient/i);
+  assert.equal(results[1].decision.next_question, "How did you get that job?");
+  assert.doesNotMatch(results[1].decision.next_question, /elementary/i);
+});
+
 test("Director schema is compact and cannot generate question wording", () => {
   assert.equal(Object.hasOwn(INTERVIEW_DIRECTOR_SCHEMA.properties, "next_question"), false);
   assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.chronology_status.enum, CHRONOLOGY_STATUSES);
@@ -351,6 +485,10 @@ test("Director schema is compact and cannot generate question wording", () => {
   assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.followup_value.enum, FOLLOWUP_VALUES);
   assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.story_resolution_status.enum, STORY_RESOLUTION_STATUSES);
   assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.story_importance.enum, STORY_IMPORTANCE_VALUES);
+  assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.life_period.enum, LIFE_PERIOD_VALUES);
+  assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.current_domain.enum, LIFE_DOMAIN_VALUES);
+  assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.domain_status.enum, DOMAIN_STATUS_VALUES);
+  assert.deepEqual(CHILDHOOD_DOMAINS, ["home_family", "elementary_school", "neighborhood_friends", "interests_hobbies", "sports", "community", "moves_major_changes"]);
   assert.deepEqual(Object.keys(INTERVIEW_DIRECTOR_SCHEMA.properties), INTERVIEW_DIRECTOR_SCHEMA.required);
   assert.ok(Object.keys(INTERVIEW_DIRECTOR_SCHEMA.properties).indexOf("director_note") < Object.keys(INTERVIEW_DIRECTOR_SCHEMA.properties).indexOf("chronology_status"));
   for (const field of [
@@ -358,7 +496,8 @@ test("Director schema is compact and cannot generate question wording", () => {
     "current_life_period", "current_topic", "story_is_emerging", "story_thread", "director_note",
     "question_objective", "followup_value", "followup_reason", "story_resolution_status",
     "story_importance", "current_thread_followup_count", "followup_budget", "followup_budget_remaining",
-    "should_advance", "context_opportunity",
+    "should_advance", "context_opportunity", "life_period", "current_domain", "domain_status", "domain_goal",
+    "domains_completed", "domains_remaining", "should_transition_domain",
   ]) assert.ok(INTERVIEW_DIRECTOR_SCHEMA.required.includes(field));
   assert.deepEqual(QUESTION_WRITER_SCHEMA.required, ["next_question", "contains_unstated_personal_fact", "assumption_explanation"]);
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /understand a life, not extract keywords/i);
@@ -373,11 +512,15 @@ test("Director schema is compact and cannot generate question wording", () => {
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /story_resolution_status=resolved.*do not keep mining/i);
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /Do not confuse completeness with quality/i);
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /budget is a ceiling, not a quota/i);
+  assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /life period -> life domain -> broad opener/i);
+  assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /A new anecdote inside a domain does not create a new domain or unlimited follow-up budget/i);
+  assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /domain is sufficient/i);
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /followup_budget_remaining=0.*followup_value=low.*should_advance=true/i);
   assert.match(QUESTION_WRITER_INSTRUCTIONS, /may not change the selected subject or objective/i);
   assert.match(QUESTION_WRITER_INSTRUCTIONS, /followup_value=low or story_resolution_status=resolved/i);
   assert.match(QUESTION_WRITER_INSTRUCTIONS, /followup_budget_remaining=0 and story_resolution_status=resolved/i);
   assert.match(QUESTION_WRITER_INSTRUCTIONS, /usually in one short sentence/i);
+  assert.match(QUESTION_WRITER_INSTRUCTIONS, /should_transition_domain=true/i);
 });
 
 test("question to durable upload to transcript to next question remains idempotent", async () => {
@@ -413,4 +556,3 @@ test("question to durable upload to transcript to next question remains idempote
   assert.equal(audioResult.contentType, "audio/webm");
   assert.match(audioResult.url, /^mock:\/\//);
 });
-

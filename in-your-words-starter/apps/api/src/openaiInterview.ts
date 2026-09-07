@@ -17,12 +17,30 @@ export const CONTEXT_OPPORTUNITIES = ["none", "need_age", "need_year", "need_pla
 export const FOLLOWUP_VALUES = ["high", "medium", "low"] as const;
 export const STORY_RESOLUTION_STATUSES = ["open", "developing", "resolved"] as const;
 export const STORY_IMPORTANCE_VALUES = ["minor", "meaningful", "major"] as const;
+export const LIFE_PERIOD_VALUES = ["childhood", "adolescence", "other"] as const;
+export const DOMAIN_STATUS_VALUES = ["not_started", "opening", "developing", "sufficient"] as const;
+export const CHILDHOOD_DOMAINS = [
+  "home_family", "elementary_school", "neighborhood_friends", "interests_hobbies", "sports",
+  "community", "moves_major_changes",
+] as const;
+export const ADOLESCENCE_DOMAINS = [
+  "middle_school", "high_school", "friends_social_life", "sports_activities", "interests_hobbies",
+  "work", "dating_relationships", "family_responsibilities", "future_plans",
+] as const;
+export const LIFE_DOMAIN_VALUES = [
+  "home_family", "elementary_school", "neighborhood_friends", "interests_hobbies", "sports",
+  "community", "moves_major_changes", "middle_school", "high_school", "friends_social_life",
+  "sports_activities", "work", "dating_relationships", "family_responsibilities", "future_plans", "other",
+] as const;
 
 export type ChronologyStatus = typeof CHRONOLOGY_STATUSES[number];
 export type ContextOpportunity = typeof CONTEXT_OPPORTUNITIES[number];
 export type FollowupValue = typeof FOLLOWUP_VALUES[number];
 export type StoryResolutionStatus = typeof STORY_RESOLUTION_STATUSES[number];
 export type StoryImportance = typeof STORY_IMPORTANCE_VALUES[number];
+export type LifePeriod = typeof LIFE_PERIOD_VALUES[number];
+export type DomainStatus = typeof DOMAIN_STATUS_VALUES[number];
+export type LifeDomain = typeof LIFE_DOMAIN_VALUES[number];
 export type StoryHistoryTurn = {
   question: string;
   answer: string;
@@ -39,6 +57,13 @@ export type StoryHistoryTurn = {
   followupBudget?: number;
   followupBudgetRemaining?: number;
   shouldAdvance?: boolean;
+  lifePeriod?: LifePeriod;
+  currentDomain?: LifeDomain;
+  domainStatus?: DomainStatus;
+  domainGoal?: string;
+  domainsCompleted?: LifeDomain[];
+  domainsRemaining?: LifeDomain[];
+  shouldTransitionDomain?: boolean;
 };
 
 export type InterviewIntent = "story_answer" | "app_question" | "app_command" | "story_correction" | "story_addendum";
@@ -69,6 +94,13 @@ export type InterviewDirectorResult = {
   followup_budget_remaining: number;
   should_advance: boolean;
   context_opportunity: ContextOpportunity;
+  life_period: LifePeriod;
+  current_domain: LifeDomain;
+  domain_status: DomainStatus;
+  domain_goal: string;
+  domains_completed: LifeDomain[];
+  domains_remaining: LifeDomain[];
+  should_transition_domain: boolean;
   app_response: string;
   command: InterviewCommand | null;
   entities: Entities;
@@ -142,6 +174,13 @@ export const INTERVIEW_DIRECTOR_SCHEMA = {
     approx_year_known: { type: "boolean" },
     place_known: { type: "boolean" },
     context_opportunity: { type: "string", enum: CONTEXT_OPPORTUNITIES },
+    life_period: { type: "string", enum: LIFE_PERIOD_VALUES },
+    current_domain: { type: "string", enum: LIFE_DOMAIN_VALUES },
+    domain_status: { type: "string", enum: DOMAIN_STATUS_VALUES },
+    domain_goal: { type: "string" },
+    domains_completed: { type: "array", items: { type: "string", enum: LIFE_DOMAIN_VALUES } },
+    domains_remaining: { type: "array", items: { type: "string", enum: LIFE_DOMAIN_VALUES } },
+    should_transition_domain: { type: "boolean" },
     app_response: { type: "string" },
     command: commandSchema,
     entities: entitiesSchema,
@@ -151,7 +190,9 @@ export const INTERVIEW_DIRECTOR_SCHEMA = {
     "story_resolution_status", "story_importance", "current_thread_followup_count", "followup_budget",
     "followup_budget_remaining", "story_thread", "current_life_period",
     "current_topic", "story_is_emerging", "should_advance", "chronology_status", "approx_age_known",
-    "approx_year_known", "place_known", "context_opportunity", "app_response", "command", "entities",
+    "approx_year_known", "place_known", "context_opportunity", "life_period", "current_domain",
+    "domain_status", "domain_goal", "domains_completed", "domains_remaining", "should_transition_domain",
+    "app_response", "command", "entities",
   ],
 };
 
@@ -190,6 +231,13 @@ function contextInput(args: TurnArgs) {
     `FOLLOWUP_BUDGET: ${turn.followupBudget ?? "unknown"}`,
     `FOLLOWUP_BUDGET_REMAINING: ${turn.followupBudgetRemaining ?? "unknown"}`,
     `SHOULD_ADVANCE: ${turn.shouldAdvance ?? "unknown"}`,
+    `LIFE_PERIOD: ${turn.lifePeriod ?? "unknown"}`,
+    `CURRENT_DOMAIN: ${turn.currentDomain ?? "unknown"}`,
+    `DOMAIN_STATUS: ${turn.domainStatus ?? "unknown"}`,
+    `DOMAIN_GOAL: ${turn.domainGoal ?? "unknown"}`,
+    `DOMAINS_COMPLETED: ${(turn.domainsCompleted ?? []).join(", ") || "none"}`,
+    `DOMAINS_REMAINING: ${(turn.domainsRemaining ?? []).join(", ") || "none"}`,
+    `SHOULD_TRANSITION_DOMAIN: ${turn.shouldTransitionDomain ?? "unknown"}`,
     `Q: ${turn.question}`,
     `A: ${turn.answer}`,
   ].join("\n")).join("\n\n");
@@ -227,6 +275,13 @@ function appDirector(
     followup_budget_remaining: 0,
     should_advance: skipping,
     context_opportunity: "none",
+    life_period: "other",
+    current_domain: "other",
+    domain_status: "not_started",
+    domain_goal: "Preserve the interrupted life-domain position.",
+    domains_completed: [],
+    domains_remaining: [],
+    should_transition_domain: false,
     app_response: appResponse,
     command,
     entities: emptyEntities(),
@@ -255,6 +310,13 @@ function storyDirector(overrides: Partial<InterviewDirectorResult> = {}): Interv
     followup_budget_remaining: 2,
     should_advance: true,
     context_opportunity: "none",
+    life_period: "other",
+    current_domain: "other",
+    domain_status: "not_started",
+    domain_goal: "Locate the next meaningful life period and domain without inventing one.",
+    domains_completed: [],
+    domains_remaining: [],
+    should_transition_domain: false,
     app_response: "",
     command: null,
     entities: emptyEntities(),
@@ -282,6 +344,302 @@ function threadBudget(args: TurnArgs, topic: string, requestedBudget: number) {
   };
 }
 
+function uniqueDomains(domains: LifeDomain[]) {
+  return [...new Set(domains)];
+}
+
+function domainFields(
+  args: TurnArgs,
+  lifePeriod: LifePeriod,
+  currentDomain: LifeDomain,
+  status: DomainStatus,
+  goal: string,
+  shouldTransition: boolean,
+) {
+  const previousCompleted = args.storyHistory.at(-1)?.domainsCompleted ?? [];
+  const completed = uniqueDomains([
+    ...previousCompleted,
+    ...(status === "sufficient" ? [currentDomain] : []),
+  ]);
+  const roadmap = lifePeriod === "childhood" ? [...CHILDHOOD_DOMAINS] :
+    lifePeriod === "adolescence" ? [...ADOLESCENCE_DOMAINS] : [];
+  return {
+    life_period: lifePeriod,
+    current_domain: currentDomain,
+    domain_status: status,
+    domain_goal: goal,
+    domains_completed: completed,
+    domains_remaining: roadmap.filter((domain) => !completed.includes(domain)),
+    should_transition_domain: shouldTransition,
+  };
+}
+
+function domainDirector(args: TurnArgs): InterviewDirectorResult | null {
+  const transcript = args.transcript.toLowerCase();
+  const question = args.currentQuestion.toLowerCase();
+  const previous = args.storyHistory.at(-1);
+  const previousDomain = previous?.currentDomain;
+  const hasDomainHistory = previousDomain != null && previousDomain !== "other";
+  const explicitDomainQuestion = /\b(?:home life|family life|elementary school|middle school|junior high|high school|outside of school|outside school|what were you into|friends|social life)\b/i.test(question);
+
+  // Preserve the existing minor-incident mock path when no broader school domain has been established yet.
+  if (!hasDomainHistory && /\b(?:time you got in trouble at school|sports memory|first job)\b/i.test(question)) return null;
+  if (!hasDomainHistory && !explicitDomainQuestion) return null;
+
+  if (/\b(?:by|in) high school\b/.test(transcript) && /\b(?:job|work|worked|working)\b/.test(transcript)) {
+    return storyDirector({
+      ...domainFields(args, "adolescence", "work", "opening", "Understand the storyteller's work during high school at a broad life-domain level.", false),
+      chronology_status: "partially_anchored",
+      current_life_period: "high school",
+      current_topic: "work during high school",
+      story_thread: "how work fit into the storyteller's high-school life",
+      director_note: "The storyteller explicitly moved from the prior domain to work during high school. Reorient to that supplied domain without losing the adolescent chronology.",
+      question_objective: "Ask how the storyteller got the high-school job they introduced.",
+      followup_value: "high",
+      followup_reason: "How the work began can open a representative experience without chasing a detail.",
+      story_resolution_status: "open",
+      story_importance: "meaningful",
+      should_advance: false,
+    });
+  }
+
+  const schoolAnecdote = /\b(?:teacher caught|detention|stayed after school|got in trouble|fight in class|sent to the principal|passed a note)\b/.test(transcript);
+  const schoolDomains: LifeDomain[] = ["elementary_school", "middle_school", "high_school"];
+  if (previousDomain && schoolDomains.includes(previousDomain) &&
+      (schoolAnecdote || /\b(?:incident|change anything about school)\b/.test(question))) {
+    const lifePeriod: LifePeriod = previousDomain === "elementary_school" ? "childhood" : "adolescence";
+    if (/\b(?:change anything about school|after that incident)\b/.test(question) || previous?.currentThreadFollowupCount === 1) {
+      return storyDirector({
+        ...domainFields(args, lifePeriod, previousDomain, "sufficient", "Return from the resolved anecdote to the broader school roadmap.", true),
+        chronology_status: "partially_anchored",
+        current_life_period: previousDomain.replaceAll("_", " "),
+        current_topic: "the broader school period",
+        story_thread: "school life beyond the completed anecdote",
+        director_note: "The school anecdote has received its one useful consequence follow-up. It does not reset the domain, so return to the broader school-to-interests progression.",
+        question_objective: "Transition from the completed school anecdote to what the storyteller was into outside school.",
+        followup_value: "low",
+        followup_reason: "Another anecdote detail would not add a new life-story dimension.",
+        story_resolution_status: "resolved",
+        story_importance: "minor",
+        current_thread_followup_count: 1,
+        followup_budget: 1,
+        followup_budget_remaining: 0,
+        should_advance: true,
+      });
+    }
+    return storyDirector({
+      ...domainFields(args, lifePeriod, previousDomain, "developing", "Take at most one useful consequence from the school anecdote, then return to the domain.", false),
+      chronology_status: "partially_anchored",
+      current_life_period: previousDomain.replaceAll("_", " "),
+      current_topic: "a school anecdote",
+      story_thread: "whether the supplied school incident changed anything meaningful",
+      director_note: "A colorful school anecdote supports the domain but must not take it over. Allow one consequence question, then return to broader school life.",
+      question_objective: "Ask whether the supplied school incident changed anything about school for the storyteller.",
+      followup_value: "medium",
+      followup_reason: "A consequence could add meaning; further incident detail would not.",
+      story_resolution_status: "resolved",
+      story_importance: "minor",
+      current_thread_followup_count: 0,
+      followup_budget: 1,
+      followup_budget_remaining: 1,
+      should_advance: false,
+    });
+  }
+
+  const asksOutsideSchool = /\b(?:outside of school|outside school|what were you into)\b/.test(question);
+  if (asksOutsideSchool) {
+    const adolescent = previous?.lifePeriod === "adolescence" || previousDomain === "middle_school" || previousDomain === "high_school";
+    const sport = /\b(?:box|boxing|baseball|basketball|football|soccer|tennis|wrestl|track|swim|sport|team)\b/.test(transcript);
+    const friends = /\bfriends?\b/.test(transcript);
+    const domain: LifeDomain = friends ? (adolescent ? "friends_social_life" : "neighborhood_friends") :
+      sport ? (adolescent ? "sports_activities" : "sports") : "interests_hobbies";
+    const lifePeriod: LifePeriod = adolescent ? "adolescence" : "childhood";
+    return storyDirector({
+      ...domainFields(args, lifePeriod, domain, "opening", "Open the supplied interest or activity without turning it into an unlimited anecdote thread.", false),
+      chronology_status: "partially_anchored",
+      current_life_period: adolescent ? "adolescence" : "childhood",
+      current_topic: friends ? "friends and social life" : sport ? "the supplied sport or activity" : "the supplied childhood interest",
+      story_thread: friends ? "what the storyteller and supplied friends usually did together" : "how the supplied interest began",
+      director_note: "The broad school transition successfully opened a new activity domain. Ask one concrete opening question, then return to chronology rather than exhaust every detail.",
+      question_objective: friends
+        ? "Ask what the storyteller and their already-mentioned friends usually did together."
+        : "Ask how the storyteller first got into the activity they supplied.",
+      followup_value: "high",
+      followup_reason: "How it began can produce one representative story within the new domain.",
+      story_resolution_status: "open",
+      story_importance: "meaningful",
+      current_thread_followup_count: 0,
+      followup_budget: 1,
+      followup_budget_remaining: 1,
+      should_advance: false,
+    });
+  }
+
+  if ((previousDomain === "interests_hobbies" || previousDomain === "sports" || previousDomain === "sports_activities") &&
+      /\b(?:how did you first get into|how did you get started)\b/.test(question)) {
+    const adolescence = previous?.lifePeriod === "adolescence";
+    return storyDirector({
+      ...domainFields(args, previous!.lifePeriod!, previousDomain, "sufficient", "Close the brief activity mini-arc and return to the next chronological school period.", true),
+      chronology_status: "transitioning",
+      current_life_period: adolescence ? "adolescence" : "childhood",
+      current_topic: "the completed activity domain",
+      story_thread: "the next chronological school period",
+      director_note: "The activity has an origin and one representative connection. That is sufficient for now, so return to the chronological life roadmap.",
+      question_objective: adolescence
+        ? "Transition to where the storyteller went to high school."
+        : "Transition to where the storyteller went to middle school.",
+      followup_value: "low",
+      followup_reason: "The activity domain is sufficient and another detail is not needed.",
+      story_resolution_status: "resolved",
+      current_thread_followup_count: 1,
+      followup_budget: 1,
+      followup_budget_remaining: 0,
+      should_advance: true,
+    });
+  }
+
+  if (/\b(?:home life|family life)\b/.test(question)) {
+    return storyDirector({
+      ...domainFields(args, "childhood", "home_family", "opening", "Establish the broad rhythm and important relationships of childhood home life.", false),
+      chronology_status: "unanchored",
+      current_life_period: "childhood",
+      current_topic: "home and family life",
+      story_thread: "everyday life at home",
+      director_note: "Home and family is the current childhood domain. Open its everyday pattern broadly rather than selecting one household detail.",
+      question_objective: "Ask what everyday life at home looked like for the storyteller.",
+      should_advance: false,
+    });
+  }
+
+  if (previousDomain === "home_family" && /\beveryday life at home\b/.test(question)) {
+    return storyDirector({
+      ...domainFields(args, "childhood", "home_family", "sufficient", "Move from a sufficient home-life foundation to elementary school.", true),
+      chronology_status: "transitioning",
+      current_life_period: "childhood",
+      current_topic: "home and family life",
+      story_thread: "the transition from home life to elementary school",
+      director_note: "The interview has a usable home-life foundation. Preserve its stories and move to the next childhood domain instead of collecting every household detail.",
+      question_objective: "Transition naturally from childhood home life to elementary school.",
+      followup_value: "low",
+      followup_reason: "The next domain will add a new dimension of childhood.",
+      story_resolution_status: "resolved",
+      should_advance: true,
+    });
+  }
+
+  if (/\belementary school\b/.test(question)) {
+    return storyDirector({
+      ...domainFields(args, "childhood", "elementary_school", "opening", "Establish the storyteller's broad elementary-school experience.", false),
+      chronology_status: "partially_anchored",
+      current_life_period: "childhood",
+      current_topic: "elementary school",
+      story_thread: "the storyteller's general experience as an elementary-school student",
+      director_note: "Elementary school is the active childhood domain. Establish the storyteller's own broad experience before following any representative story.",
+      question_objective: "Ask what kind of student the storyteller was in elementary school.",
+      should_advance: false,
+    });
+  }
+
+  if (previousDomain === "elementary_school" && /\bwhat kind of student\b/.test(question)) {
+    return storyDirector({
+      ...domainFields(args, "childhood", "elementary_school", "developing", "Learn one more broad dimension of elementary school before leaving the domain.", false),
+      chronology_status: "partially_anchored",
+      current_life_period: "childhood",
+      current_topic: "elementary school",
+      story_thread: "classes and learning during elementary school",
+      director_note: "The school and general student identity are established. Ask one broad learning question rather than drilling into a newly mentioned detail.",
+      question_objective: "Ask which classes the storyteller enjoyed in elementary school.",
+      should_advance: false,
+    });
+  }
+
+  if (previousDomain === "elementary_school" && /\bclasses did you enjoy\b/.test(question)) {
+    return storyDirector({
+      ...domainFields(args, "childhood", "elementary_school", "sufficient", "Leave elementary school for the storyteller's interests outside school.", true),
+      chronology_status: "transitioning",
+      current_life_period: "childhood",
+      current_topic: "elementary school",
+      story_thread: "the transition from elementary school to childhood interests",
+      director_note: "Elementary school now has place, student character, and learning context. That is sufficient; transition to interests instead of exhausting school details.",
+      question_objective: "Transition to what the storyteller was into outside elementary school.",
+      followup_value: "low",
+      followup_reason: "A new domain will broaden the childhood portrait.",
+      story_resolution_status: "resolved",
+      should_advance: true,
+    });
+  }
+
+  if (/\b(?:where did you go to middle school|middle school|junior high)\b/.test(question)) {
+    return storyDirector({
+      ...domainFields(args, "adolescence", "middle_school", "opening", "Establish the broad middle-school period and its place in chronology.", false),
+      chronology_status: "transitioning",
+      current_life_period: "early adolescence",
+      current_topic: "middle school",
+      story_thread: "the storyteller's overall middle-school period",
+      director_note: "The chronology has reached middle school. Open the period broadly before selecting any anecdote or activity.",
+      question_objective: "Ask what the middle-school period was like for the storyteller.",
+      should_advance: false,
+    });
+  }
+
+  if (previousDomain === "middle_school" && /\bwhat was that period like\b/.test(question)) {
+    return storyDirector({
+      ...domainFields(args, "adolescence", "middle_school", "developing", "Open the storyteller's interests during middle school.", true),
+      chronology_status: "partially_anchored",
+      current_life_period: "early adolescence",
+      current_topic: "middle school",
+      story_thread: "activities and interests during middle school",
+      director_note: "The broad middle-school period is established. Use the recurring interests transition to open another adolescent domain naturally.",
+      question_objective: "Ask what the storyteller was into during middle school.",
+      should_advance: true,
+    });
+  }
+
+  if (/\bwhere did you go to high school\b/.test(question) || (hasDomainHistory && /\bhigh school\b/.test(question))) {
+    return storyDirector({
+      ...domainFields(args, "adolescence", "high_school", "opening", "Establish the storyteller's broad high-school experience.", false),
+      chronology_status: "transitioning",
+      current_life_period: "adolescence",
+      current_topic: "high school",
+      story_thread: "the storyteller's identity as a high-school student",
+      director_note: "The chronology has reached high school. Open the domain with the storyteller's broad student identity, not a detail from the latest answer.",
+      question_objective: "Ask what kind of student the storyteller was in high school.",
+      should_advance: false,
+    });
+  }
+
+  if (previousDomain === "high_school" && /\bwhat kind of student\b/.test(question)) {
+    return storyDirector({
+      ...domainFields(args, "adolescence", "high_school", "developing", "Understand one broad learning dimension of high school.", false),
+      chronology_status: "partially_anchored",
+      current_life_period: "adolescence",
+      current_topic: "high school",
+      story_thread: "classes and learning in high school",
+      director_note: "The high-school setting and student identity are established. Ask one broad class question before moving to life outside school.",
+      question_objective: "Ask which classes the storyteller liked in high school.",
+      should_advance: false,
+    });
+  }
+
+  if (previousDomain === "high_school" && /\bclasses did you like\b/.test(question)) {
+    return storyDirector({
+      ...domainFields(args, "adolescence", "high_school", "sufficient", "Move from sufficient high-school context to life outside school.", true),
+      chronology_status: "partially_anchored",
+      current_life_period: "adolescence",
+      current_topic: "high school",
+      story_thread: "the transition from school to adolescent activities and relationships",
+      director_note: "The high-school domain has enough educational context. Broaden the life story by asking what occupied the storyteller outside school.",
+      question_objective: "Transition to what the storyteller was into outside high school.",
+      followup_value: "low",
+      followup_reason: "The school domain is sufficient and another domain will add more value.",
+      story_resolution_status: "resolved",
+      should_advance: true,
+    });
+  }
+
+  return null;
+}
+
 function mockDirector(args: TurnArgs): InterviewDirectorResult {
   const transcript = args.transcript.trim();
   const normalized = transcript.toLowerCase();
@@ -304,6 +662,9 @@ function mockDirector(args: TurnArgs): InterviewDirectorResult {
   if (normalized.endsWith("?") || startsWhQuestion) {
     return appDirector("app_question", "That information is not available in mock mode.", null);
   }
+
+  const directedByDomain = domainDirector(args);
+  if (directedByDomain) return directedByDomain;
 
   const ageKnown = hasApproxAge(allText);
   const yearKnown = hasApproxYear(allText);
@@ -1027,6 +1388,23 @@ export async function directNextTurn(args: TurnArgs): Promise<InterviewDirectorR
 
 function mockQuestion(direction: InterviewDirectorResult): string {
   switch (direction.question_objective) {
+    case "Ask what everyday life at home looked like for the storyteller.": return "What did everyday life at home look like for you?";
+    case "Transition naturally from childhood home life to elementary school.": return "What was elementary school like for you?";
+    case "Ask what kind of student the storyteller was in elementary school.": return "What kind of student were you?";
+    case "Ask which classes the storyteller enjoyed in elementary school.": return "What classes did you enjoy?";
+    case "Transition to what the storyteller was into outside elementary school.": return "What were you into outside of school?";
+    case "Ask what the middle-school period was like for the storyteller.": return "What was that period like for you?";
+    case "Ask what the storyteller was into during middle school.": return "What were you into then?";
+    case "Ask what kind of student the storyteller was in high school.": return "What kind of student were you by then?";
+    case "Ask which classes the storyteller liked in high school.": return "What classes did you like?";
+    case "Transition to what the storyteller was into outside high school.": return "What were you into outside of school?";
+    case "Ask how the storyteller first got into the activity they supplied.": return "How did you first get into that?";
+    case "Ask what the storyteller and their already-mentioned friends usually did together.": return "What did you and your friends usually do together?";
+    case "Transition to where the storyteller went to middle school.": return "Where did you go to middle school?";
+    case "Transition to where the storyteller went to high school.": return "Where did you go to high school?";
+    case "Ask whether the supplied school incident changed anything about school for the storyteller.": return "Did that change anything about school for you?";
+    case "Transition from the completed school anecdote to what the storyteller was into outside school.": return "What were you into outside of school?";
+    case "Ask how the storyteller got the high-school job they introduced.": return "How did you get that job?";
     case "Establish how serious the father's lake accident was.": return "How serious was your father's accident?";
     case "Determine whether the lake accident changed anything important for the storyteller's family afterward.": return "Did that accident change anything important for your family afterward?";
     case "Move forward to the next meaningful change in the storyteller's life after the resolved lake accident.": return "What came next for you after that?";
@@ -1150,4 +1528,3 @@ export async function decideNextTurn(args: TurnArgs): Promise<InterviewDecision>
   }
   return storyDecision(direction, writer);
 }
-
