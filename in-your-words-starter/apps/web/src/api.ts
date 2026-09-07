@@ -38,7 +38,7 @@ export async function processTurn(turnId: string) {
   return json<{
     transcript: string;
     decision: {
-      intent: "story_answer" | "app_question" | "app_command";
+      intent: "story_answer" | "app_question" | "app_command" | "story_correction" | "story_addendum";
       speak_text: string;
       next_question: string;
       command: { name: string; value: string | null } | null;
@@ -55,3 +55,4 @@ export async function getSpeech(text: string) {
   if (!response.ok) throw new Error(await response.text());
   return { blob: await response.blob(), provider: response.headers.get("X-TTS-Provider") };
 }
+

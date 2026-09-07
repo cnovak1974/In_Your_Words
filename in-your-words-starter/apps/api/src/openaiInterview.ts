@@ -41,14 +41,15 @@ export type StoryHistoryTurn = {
   shouldAdvance?: boolean;
 };
 
-type Intent = "story_answer" | "app_question" | "app_command";
+export type InterviewIntent = "story_answer" | "app_question" | "app_command" | "story_correction" | "story_addendum";
+type DirectorIntent = Exclude<InterviewIntent, "story_correction" | "story_addendum">;
 type CommandName = "repeat_question" | "slower" | "faster" | "larger_text" | "smaller_text" |
   "high_contrast" | "normal_contrast" | "pause" | "skip" | "go_back";
 type InterviewCommand = { name: CommandName; value: string | null };
 type Entities = { people: string[]; places: string[]; dates: string[]; organizations: string[] };
 
 export type InterviewDirectorResult = {
-  interview_intent: Intent;
+  interview_intent: DirectorIntent;
   chronology_status: ChronologyStatus;
   approx_age_known: boolean;
   approx_year_known: boolean;
@@ -80,7 +81,7 @@ export type QuestionWriterResult = {
 };
 
 export type InterviewDecision = Omit<InterviewDirectorResult, "app_response"> & QuestionWriterResult & {
-  intent: Intent;
+  intent: InterviewIntent;
   speak_text: string;
 };
 
@@ -1149,3 +1150,4 @@ export async function decideNextTurn(args: TurnArgs): Promise<InterviewDecision>
   }
   return storyDecision(direction, writer);
 }
+

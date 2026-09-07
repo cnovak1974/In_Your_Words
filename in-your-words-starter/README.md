@@ -12,20 +12,28 @@ The raw audio upload happens before transcription or LLM processing. That is del
 - one-touch interview UX
 - permanent raw-audio storage in R2
 - Deepgram transcription
-- three-way intent routing: story answer / app question / app command
+- five-way intent routing: story answer / app question / app command / story correction / story addendum
 - non-leading next-question generation with a structured OpenAI response
 - automatic TTS playback using a generic ElevenLabs reader voice
 - Postgres persistence of sessions, questions, transcript, intent and AI metadata
 
 ## What is deliberately not in this slice
 
-Auth, historical lookup, narrative chapter generation, contradiction workflow, photo capture, voice cloning, produced Newsreel media, export and Remotion video. The database/API boundaries are set up so those can be added without replacing the core capture loop.
+Auth, historical lookup, narrative chapter generation, editorial contradiction resolution, photo capture, voice cloning, produced Newsreel media, export and Remotion video. The database/API boundaries are set up so those can be added without replacing the core capture loop.
 
 ## Newsreel Phase 1 boundary
 
 The API now derives optional Newsreel context metadata after each completed story turn. A candidate becomes ready only when supplied story turns establish a usable year or approximate year/range and at least a city/region. Readiness never changes the active interview question or calls a historical provider.
 
 The candidate, stable context key, and exact resume snapshot are stored inside the existing turn `ai_payload` and exposed by `GET /api/sessions/:id` as `newsreel_candidate`. Historical retrieval, script generation, offers, playback, imagery, and video remain unimplemented. Future retrieval must return separately sourced local, national, and international facts, and must never imply that the storyteller personally experienced surrounding historical events.
+
+## Storyteller correction and addendum channel
+
+Explicit corrections and addenda bypass the Interview Director and Question Writer. Before handling one, the API bookmarks the exact active question, story thread, Director diagnostics, follow-up budget, and Newsreel candidate. A correction creates an immutable supersession record linking the correction turn to the original story turn; an addendum links new material without marking the original as wrong. Both the original and override turns retain their own raw audio and transcript.
+
+If the request is incomplete or the target is ambiguous, the API asks one short clarification and keeps the bookmark. Applied facts are exposed as `accepted_story_facts`, while all original statements and correction records remain in turn history. Chronology or place corrections recompute the Newsreel anchor and record superseded candidates as `invalidated`.
+
+This prototype requires no database migration. Semantic `story_correction` and `story_addendum` intents and records live in `ai_payload`; the constrained legacy `turns.intent` column stores the compatibility value `app_command`, which also keeps override turns out of story-answer history. A later normalized correction table can replace this compatibility layer without changing the API contract.
 
 ## Local setup
 

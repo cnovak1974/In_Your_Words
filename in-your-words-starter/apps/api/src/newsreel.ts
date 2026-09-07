@@ -1,6 +1,6 @@
 export const DATE_CONFIDENCE_VALUES = ["exact", "year", "approx_year", "year_range", "insufficient"] as const;
 export const PLACE_CONFIDENCE_VALUES = ["exact", "city_region", "region_only", "insufficient"] as const;
-export const NEWSREEL_STATUS_VALUES = ["not_ready", "ready", "prepared", "offered", "played", "dismissed"] as const;
+export const NEWSREEL_STATUS_VALUES = ["not_ready", "ready", "prepared", "offered", "played", "dismissed", "invalidated"] as const;
 export const HISTORICAL_ITEM_CONFIDENCE_VALUES = ["high", "medium", "low"] as const;
 
 export type DateConfidence = typeof DATE_CONFIDENCE_VALUES[number];
@@ -40,6 +40,13 @@ export type ContextEvidence = {
   dateConfidence?: Exclude<DateConfidence, "insufficient">;
 };
 
+export type ContextFactOverride = {
+  sourceTurnId: string;
+  targetTurnId: string;
+  factPath: string;
+  value: string;
+};
+
 export type NewsreelResumeDirectorState = {
   chronology_status: string;
   current_life_period: string;
@@ -59,6 +66,7 @@ export type NewsreelCandidate = ContextEligibility & {
   offered_at: string | null;
   played_at: string | null;
   dismissed_at: string | null;
+  invalidated_at: string | null;
   resume_question: string;
   resume_thread: string;
   resume_director_state: NewsreelResumeDirectorState;
@@ -200,6 +208,13 @@ function placeKey(place: string) {
   return slug(place);
 }
 
+function correctedPlace(originalPlace: string | undefined, correctedValue: string) {
+  const normalizedCorrection = normalizePlace(correctedValue);
+  if (normalizedCorrection.includes(",") || !originalPlace?.includes(",")) return normalizedCorrection;
+  const region = originalPlace.split(",").slice(1).join(",").trim();
+  return normalizePlace(`${normalizedCorrection}, ${region}`);
+}
+
 export function extractContextEvidence(turn: ContextTurn): ContextEvidence[] {
   const evidence: ContextEvidence[] = [];
   const text = turn.transcript.trim();
@@ -328,6 +343,53 @@ export function buildContextAnchor(evidence: ContextEvidence[]): ContextAnchor {
   };
 }
 
+export function applyContextFactOverrides(
+  evidence: ContextEvidence[],
+  overrides: ContextFactOverride[] = [],
+): ContextEvidence[] {
+  const result = evidence.map((item) => ({ ...item }));
+  for (const override of overrides) {
+    const matching = result.filter((item) => item.turnId === override.targetTurnId);
+    if (override.factPath === "chronology.age") {
+      for (const item of matching) {
+        delete item.age;
+        delete item.ageIsApproximate;
+      }
+      const age = Number(override.value);
+      if (validAge(age)) result.push({ turnId: override.sourceTurnId, age });
+    } else if (override.factPath === "chronology.birth_year") {
+      for (const item of matching) delete item.birthYear;
+      const birthYear = Number(override.value);
+      if (validYear(birthYear)) result.push({ turnId: override.sourceTurnId, birthYear });
+    } else if (override.factPath === "chronology.year") {
+      for (const item of matching) {
+        delete item.year;
+        delete item.approxYear;
+        delete item.yearStart;
+        delete item.yearEnd;
+        delete item.dateConfidence;
+      }
+      const year = Number(override.value);
+      if (validYear(year)) result.push({ turnId: override.sourceTurnId, year, dateConfidence: "year" });
+    } else if (override.factPath === "place" || override.factPath === "place.city") {
+      const originalPlace = [...matching].reverse().find((item) => item.place)?.place;
+      for (const item of matching) {
+        delete item.place;
+        delete item.placeConfidence;
+      }
+      const place = correctedPlace(originalPlace, override.value);
+      if (place) {
+        result.push({
+          turnId: override.sourceTurnId,
+          place,
+          placeConfidence: place.includes(",") ? "city_region" : "region_only",
+        });
+      }
+    }
+  }
+  return result;
+}
+
 export function assessContextEligibility(anchor: ContextAnchor): ContextEligibility {
   const contextMissing: ContextMissing[] = [];
   if (anchor.date_confidence === "insufficient") contextMissing.push("date");
@@ -363,7 +425,7 @@ export function createNewsreelCandidate(args: {
   if (key) {
     for (let index = (args.previousCandidates?.length ?? 0) - 1; index >= 0; index -= 1) {
       const candidate = args.previousCandidates?.[index];
-      if (candidate?.context_key === key && candidate.status !== "not_ready") return candidate;
+      if (candidate?.context_key === key && candidate.status !== "not_ready" && candidate.status !== "invalidated") return candidate;
     }
   }
   return {
@@ -375,6 +437,7 @@ export function createNewsreelCandidate(args: {
     offered_at: null,
     played_at: null,
     dismissed_at: null,
+    invalidated_at: null,
     resume_question: args.resumeQuestion,
     resume_thread: args.resumeThread,
     resume_director_state: args.resumeDirectorState,
@@ -387,15 +450,36 @@ export function deriveNewsreelCandidate(args: {
   resumeQuestion: string;
   resumeThread: string;
   resumeDirectorState: NewsreelResumeDirectorState;
+  factOverrides?: ContextFactOverride[];
 }) {
-  const evidence = args.turns.flatMap(extractContextEvidence);
+  const evidence = applyContextFactOverrides(args.turns.flatMap(extractContextEvidence), args.factOverrides);
   const anchor = buildContextAnchor(evidence);
   return createNewsreelCandidate({ ...args, anchor });
 }
 
+export function invalidateNewsreelCandidates(args: {
+  candidates: NewsreelCandidate[];
+  targetTurnId: string;
+  currentContextKey: string | null;
+  at?: string;
+}) {
+  const at = args.at ?? new Date().toISOString();
+  const invalidated = new Map<string, NewsreelCandidate>();
+  for (const candidate of args.candidates) {
+    if (candidate.status === "invalidated" || candidate.context_key === args.currentContextKey ||
+        !candidate.anchor.source_turn_ids.includes(args.targetTurnId)) continue;
+    invalidated.set(candidate.context_key ?? JSON.stringify(candidate.anchor), {
+      ...candidate,
+      status: "invalidated",
+      invalidated_at: at,
+    });
+  }
+  return [...invalidated.values()];
+}
+
 export function transitionNewsreelCandidate(
   candidate: NewsreelCandidate,
-  status: Exclude<NewsreelStatus, "not_ready" | "ready">,
+  status: Exclude<NewsreelStatus, "not_ready" | "ready" | "invalidated">,
   at = new Date().toISOString(),
 ): NewsreelCandidate {
   if (!candidate.context_ready) throw new Error("Newsreel context is not ready");

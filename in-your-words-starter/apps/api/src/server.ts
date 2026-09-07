@@ -7,8 +7,11 @@ import { transcribeRemoteAudio } from "./deepgram.js";
 import { synthesizeSpeech } from "./elevenlabs.js";
 import {
   deriveNewsreelCandidate,
+  invalidateNewsreelCandidates,
   isNewsreelCandidate,
+  type ContextFactOverride,
   type NewsreelCandidate,
+  type NewsreelResumeDirectorState,
 } from "./newsreel.js";
 import {
   CHRONOLOGY_STATUSES,
@@ -21,6 +24,15 @@ import {
   type StoryImportance,
   type StoryResolutionStatus,
 } from "./openaiInterview.js";
+import {
+  createInterviewBookmark,
+  handleStoryOverride,
+  isStoryOverrideInteraction,
+  type AcceptedStoryFact,
+  type InterviewBookmark,
+  type StoryOverrideInteraction,
+  type StoryTurnReference,
+} from "./storyOverrides.js";
 import {
   confirmObject, createReadUrl, createUploadUrl, mockObjectContentTypes, mockObjects,
   storageUrlLifetimeSeconds,
@@ -46,6 +58,53 @@ app.use(express.json({ limit: "1mb" }));
 
 const INITIAL_QUESTION =
   "I'd like to start with your early years. Picture the place you think of as home when you were young—what comes back to you first?";
+
+async function persistCompletedTurn(args: {
+  row: any;
+  transcript: string;
+  semanticIntent: string;
+  aiPayload: Record<string, unknown>;
+  nextQuestion: string;
+}) {
+  // story_correction and story_addendum remain explicit in ai_payload while the prototype uses the
+  // existing app_command-compatible database value to avoid widening the legacy check constraint.
+  const storedIntent = args.semanticIntent === "story_correction" || args.semanticIntent === "story_addendum"
+    ? "app_command"
+    : args.semanticIntent;
+  const client = await db.connect();
+  try {
+    await client.query("begin");
+    await client.query(
+      `update turns set transcript=$2, intent=$3, ai_payload=$4::jsonb, extracted_data=($4::jsonb->'entities'), status='complete', processed_at=now()
+       where id=$1`,
+      [args.row.id, args.transcript, storedIntent, JSON.stringify(args.aiPayload)],
+    );
+    await client.query(
+      "update sessions set current_question=$2, updated_at=now() where id=$1",
+      [args.row.session_id, args.nextQuestion],
+    );
+    await client.query("commit");
+  } catch (dbError) {
+    await client.query("rollback");
+    throw dbError;
+  } finally {
+    client.release();
+  }
+}
+
+function newsreelDirectorState(bookmark: InterviewBookmark, replacement?: Record<string, any> | null): NewsreelResumeDirectorState {
+  const state = replacement ?? bookmark.director_state;
+  return {
+    chronology_status: state?.chronology_status ?? "unanchored",
+    current_life_period: state?.current_life_period ?? "the interrupted interview point",
+    current_topic: state?.current_topic ?? "the interrupted interview question",
+    story_thread: state?.story_thread ?? bookmark.current_interview_thread,
+    story_is_emerging: state?.story_is_emerging ?? false,
+    story_resolution_status: state?.story_resolution_status ?? "open",
+    story_importance: state?.story_importance ?? "minor",
+    should_advance: state?.should_advance ?? false,
+  };
+}
 
 app.get("/health", async (_req, res) => {
   try {
@@ -88,9 +147,12 @@ app.get("/api/sessions/:id", async (req, res) => {
   );
   if (!result.rowCount) return res.status(404).json({ error: "Session not found" });
   const candidateResult = await db.query(
-    `select ai_payload->'newsreel_candidate' as newsreel_candidate
+    `select ai_payload->'newsreel_candidate' as newsreel_candidate,
+            ai_payload->'accepted_story_facts' as accepted_story_facts,
+            ai_payload->'override_interaction' as override_interaction
      from turns
-     where session_id=$1 and status='complete' and ai_payload ? 'newsreel_candidate'
+     where session_id=$1 and status='complete'
+       and (ai_payload ? 'newsreel_candidate' or ai_payload ? 'override_interaction')
      order by created_at desc limit 1`,
     [req.params.id],
   );
@@ -100,6 +162,12 @@ app.get("/api/sessions/:id", async (req, res) => {
     context_ready: isNewsreelCandidate(candidate) ? candidate.context_ready : false,
     context_missing: isNewsreelCandidate(candidate) ? candidate.context_missing : ["date", "place"],
     newsreel_candidate: isNewsreelCandidate(candidate) ? candidate : null,
+    accepted_story_facts: Array.isArray(candidateResult.rows[0]?.accepted_story_facts)
+      ? candidateResult.rows[0].accepted_story_facts
+      : [],
+    override_interaction: isStoryOverrideInteraction(candidateResult.rows[0]?.override_interaction)
+      ? candidateResult.rows[0].override_interaction
+      : null,
   });
 });
 
@@ -154,6 +222,14 @@ app.post("/api/turns/:id/process", async (req, res) => {
     );
     const audioUrl = await createReadUrl(row.raw_audio_key);
     const transcript = await transcribeRemoteAudio(audioUrl);
+
+    const stateHistoryResult = await db.query(
+      `select id, question_text, transcript, intent, ai_payload
+       from turns
+       where session_id=$1 and status='complete' and id <> $2
+       order by created_at asc`,
+      [row.session_id, row.id],
+    );
 
     const historyResult = await db.query(
       `select id, question_text, transcript,
@@ -239,14 +315,152 @@ app.post("/api/turns/:id/process", async (req, res) => {
       [row.session_id, row.id],
     );
 
+    const previousCandidates = candidateHistoryResult.rows
+      .map((historyRow: { newsreel_candidate?: unknown }) => historyRow.newsreel_candidate)
+      .filter(isNewsreelCandidate);
+    const stateRows = stateHistoryResult.rows as Array<{
+      id: string;
+      question_text: string;
+      transcript: string;
+      intent: string;
+      ai_payload?: Record<string, any> | null;
+    }>;
+    const latestInteraction = [...stateRows].reverse()
+      .map((stateRow) => stateRow.ai_payload?.override_interaction)
+      .find(isStoryOverrideInteraction) as StoryOverrideInteraction | undefined;
+    const pendingInteraction = latestInteraction?.status === "awaiting_clarification" ? latestInteraction : null;
+    const latestAcceptedFacts = [...stateRows].reverse()
+      .map((stateRow) => stateRow.ai_payload?.accepted_story_facts)
+      .find(Array.isArray) as AcceptedStoryFact[] | undefined;
+    const acceptedStoryFacts = latestAcceptedFacts ?? [];
+    const latestStoryDecision = [...stateRows].reverse()
+      .find((stateRow) => stateRow.ai_payload?.intent === "story_answer")?.ai_payload as any;
+    const latestCandidate = [...stateRows].reverse()
+      .map((stateRow) => stateRow.ai_payload?.newsreel_candidate)
+      .find(isNewsreelCandidate) as NewsreelCandidate | undefined;
+    const bookmark = pendingInteraction?.bookmark ?? createInterviewBookmark({
+      currentQuestion: row.current_question,
+      priorDecision: latestStoryDecision ?? null,
+      newsreelCandidate: latestCandidate ?? null,
+    });
+    const storyTurns: StoryTurnReference[] = stateRows
+      .filter((stateRow) => stateRow.intent === "story_answer" || stateRow.ai_payload?.intent === "story_answer")
+      .map((stateRow) => ({
+        id: stateRow.id,
+        transcript: stateRow.transcript,
+        question_text: stateRow.question_text,
+        ai_payload: stateRow.ai_payload,
+      }));
+    const override = handleStoryOverride({
+      transcript,
+      sourceTurnId: row.id,
+      storyTurns,
+      currentQuestion: row.current_question,
+      bookmark,
+      pendingInteraction,
+      acceptedStoryFacts,
+    });
+
+    if (override) {
+      let replacementDecision: Record<string, any> | null = null;
+      let nextQuestion = override.next_question;
+      let speakText = override.speak_text;
+      if (override.question_invalidated) {
+        replacementDecision = await decideNextTurn({
+          currentQuestion: override.interaction.bookmark.current_question,
+          transcript,
+          storyHistory,
+        });
+        nextQuestion = replacementDecision.next_question;
+        speakText = `${override.speak_text} ${nextQuestion}`;
+      }
+
+      let newsreelCandidate = override.interaction.bookmark.newsreel_candidate ?? latestCandidate ?? null;
+      let invalidatedNewsreelCandidates: NewsreelCandidate[] = [];
+      if (override.context_changed && override.correction_record?.target_turn_id) {
+        const factOverrides: ContextFactOverride[] = override.accepted_story_facts.map((fact) => ({
+          sourceTurnId: fact.source_turn_id,
+          targetTurnId: fact.target_turn_id,
+          factPath: fact.fact_path,
+          value: fact.value,
+        }));
+        newsreelCandidate = deriveNewsreelCandidate({
+          turns: storyTurns,
+          previousCandidates,
+          resumeQuestion: nextQuestion,
+          resumeThread: replacementDecision?.story_thread ?? override.interaction.bookmark.current_interview_thread,
+          resumeDirectorState: newsreelDirectorState(override.interaction.bookmark, replacementDecision),
+          factOverrides,
+        });
+        invalidatedNewsreelCandidates = invalidateNewsreelCandidates({
+          candidates: previousCandidates,
+          targetTurnId: override.correction_record.target_turn_id,
+          currentContextKey: newsreelCandidate.context_key,
+        });
+      }
+
+      const preservedState = replacementDecision ?? override.interaction.bookmark.director_state ?? {
+        chronology_status: "unanchored",
+        approx_age_known: false,
+        approx_year_known: false,
+        place_known: false,
+        current_life_period: "the interrupted interview point",
+        current_topic: "the interrupted interview question",
+        story_is_emerging: false,
+        story_thread: override.interaction.bookmark.current_interview_thread,
+        director_note: "The correction channel preserves the interrupted interview state.",
+        question_objective: "Resume the exact interrupted interview question.",
+        followup_value: "low",
+        followup_reason: "A correction or addendum does not consume an interview follow-up.",
+        story_resolution_status: "open",
+        story_importance: "minor",
+        current_thread_followup_count: 0,
+        followup_budget: 0,
+        followup_budget_remaining: 0,
+        should_advance: false,
+        context_opportunity: "none",
+      };
+      const aiPayload: Record<string, unknown> = {
+        ...preservedState,
+        interview_intent: override.intent,
+        intent: override.intent,
+        next_question: nextQuestion,
+        speak_text: speakText,
+        contains_unstated_personal_fact: false,
+        assumption_explanation: "",
+        command: null,
+        entities: { people: [], places: [], dates: [], organizations: [] },
+        correction_record: override.correction_record,
+        addendum_record: override.addendum_record,
+        override_interaction: override.interaction,
+        accepted_story_facts: override.accepted_story_facts,
+        newsreel_candidate: newsreelCandidate,
+        invalidated_newsreel_candidates: invalidatedNewsreelCandidates,
+        context_ready: newsreelCandidate?.context_ready ?? false,
+        context_missing: newsreelCandidate?.context_missing ?? ["date", "place"],
+        persistence_note: "Semantic override intent is stored in ai_payload; the legacy intent column uses app_command during this no-migration prototype.",
+      };
+      await persistCompletedTurn({
+        row,
+        transcript,
+        semanticIntent: override.intent,
+        aiPayload,
+        nextQuestion,
+      });
+      return res.json({ transcript, decision: aiPayload });
+    }
+
     const decision = await decideNextTurn({
       currentQuestion: row.current_question,
       transcript,
       storyHistory,
     });
-    const previousCandidates = candidateHistoryResult.rows
-      .map((historyRow: { newsreel_candidate?: unknown }) => historyRow.newsreel_candidate)
-      .filter(isNewsreelCandidate);
+    const factOverrides: ContextFactOverride[] = acceptedStoryFacts.map((fact) => ({
+      sourceTurnId: fact.source_turn_id,
+      targetTurnId: fact.target_turn_id,
+      factPath: fact.fact_path,
+      value: fact.value,
+    }));
     const newsreelCandidate: NewsreelCandidate | null = decision.intent === "story_answer"
       ? deriveNewsreelCandidate({
         turns: [
@@ -257,6 +471,7 @@ app.post("/api/turns/:id/process", async (req, res) => {
           { id: row.id, transcript },
         ],
         previousCandidates,
+        factOverrides,
         resumeQuestion: decision.next_question,
         resumeThread: decision.story_thread,
         resumeDirectorState: {
@@ -271,34 +486,23 @@ app.post("/api/turns/:id/process", async (req, res) => {
         },
       })
       : previousCandidates.at(-1) ?? null;
-    const aiPayload = newsreelCandidate
+    const aiPayload: Record<string, unknown> = newsreelCandidate
       ? {
         ...decision,
         context_ready: newsreelCandidate.context_ready,
         context_missing: newsreelCandidate.context_missing,
         newsreel_candidate: newsreelCandidate,
+        accepted_story_facts: acceptedStoryFacts,
       }
-      : decision;
+      : { ...decision, accepted_story_facts: acceptedStoryFacts };
 
-    const client = await db.connect();
-    try {
-      await client.query("begin");
-      await client.query(
-        `update turns set transcript=$2, intent=$3, ai_payload=$4::jsonb, extracted_data=($4::jsonb->'entities'), status='complete', processed_at=now()
-         where id=$1`,
-        [row.id, transcript, decision.intent, JSON.stringify(aiPayload)],
-      );
-      await client.query(
-        "update sessions set current_question=$2, updated_at=now() where id=$1",
-        [row.session_id, decision.next_question],
-      );
-      await client.query("commit");
-    } catch (dbError) {
-      await client.query("rollback");
-      throw dbError;
-    } finally {
-      client.release();
-    }
+    await persistCompletedTurn({
+      row,
+      transcript,
+      semanticIntent: decision.intent,
+      aiPayload,
+      nextQuestion: decision.next_question,
+    });
 
     res.json({ transcript, decision: aiPayload });
   } catch (error) {
