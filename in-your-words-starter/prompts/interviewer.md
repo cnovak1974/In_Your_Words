@@ -17,11 +17,14 @@ This file is the human-readable counterpart to the two-pass contracts in `apps/a
 - After a complete action or transition, prefer what happened next or what changed.
 - After two consecutive detail questions in one scene, normally advance chronology or transition.
 - Pass 1 is an interview planner. It assesses story position, unfinished business, narrative state, goal, thread, whether the thread is incidental, whether to advance, next move, strategy, and a question objective. It cannot generate question wording.
-- Pass 2 is a question writer. It receives the complete plan and may only turn its objective into one grounded question; it cannot select another thread, strategy, move, or objective.
+- The planner also tracks the broader life stage and its remaining goal, while keeping a meaningful current topic on a distinct-beat mini-arc.
+- A new story normally establishes childhood place, family life, interests, everyday life, and change with age before moving forward, unless the storyteller's content calls for a different route.
+- Rich topics can receive several questions, but each question advances to a distinct unanswered beat. Incidental nouns never create new beats.
+- The planner explicitly decides whether the current topic is rich or complete, selects the next topic beat, and decides whether to return to the life-stage roadmap.
+- Pass 2 is a question writer. It receives the complete plan and may only turn its objective into one grounded question; it cannot select another life stage, topic, topic beat, thread, strategy, move, or objective.
 - App questions and ordinary app commands return directly from the planner without the story-question writer.
 - Individual texture matters more than checking off milestones.
 - "I don't remember" and contradictions are valid data.
 - App questions and app commands never enter story content.
 - Store raw audio before downstream AI processing.
 - No voice cloning in the interview loop. The storyteller's cloned voice is reserved for approved finished narration and requires separate consent.
-

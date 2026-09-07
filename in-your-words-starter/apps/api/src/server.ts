@@ -5,7 +5,13 @@ import { appMode, config, providers } from "./config.js";
 import { db, healthCheckDb } from "./db.js";
 import { transcribeRemoteAudio } from "./deepgram.js";
 import { synthesizeSpeech } from "./elevenlabs.js";
-import { QUESTION_STRATEGIES, decideNextTurn, type QuestionStrategy } from "./openaiInterview.js";
+import {
+  LIFE_STAGES,
+  QUESTION_STRATEGIES,
+  decideNextTurn,
+  type LifeStage,
+  type QuestionStrategy,
+} from "./openaiInterview.js";
 import {
   confirmObject, createReadUrl, createUploadUrl, mockObjectContentTypes, mockObjects,
   storageUrlLifetimeSeconds,
@@ -128,15 +134,35 @@ app.post("/api/turns/:id/process", async (req, res) => {
     const transcript = await transcribeRemoteAudio(audioUrl);
 
     const historyResult = await db.query(
-      `select question_text, transcript, ai_payload->>'strategy' as strategy from turns
+      `select question_text, transcript, ai_payload->>'strategy' as strategy,
+              ai_payload->>'life_stage' as life_stage,
+              ai_payload->>'current_topic' as current_topic,
+              ai_payload->>'next_topic_beat' as next_topic_beat,
+              ai_payload->>'topic_complete' as topic_complete,
+              ai_payload->>'return_to_life_roadmap' as return_to_life_roadmap
+       from turns
        where session_id=$1 and intent='story_answer' and transcript is not null and id <> $2
        order by created_at desc limit 50`,
       [row.session_id, row.id],
     );
-    const storyHistory = historyResult.rows.reverse().map((r: { question_text: string; transcript: string; strategy?: string | null }) => ({
+    const storyHistory = historyResult.rows.reverse().map((r: {
+      question_text: string;
+      transcript: string;
+      strategy?: string | null;
+      life_stage?: string | null;
+      current_topic?: string | null;
+      next_topic_beat?: string | null;
+      topic_complete?: string | null;
+      return_to_life_roadmap?: string | null;
+    }) => ({
       question: r.question_text,
       answer: r.transcript,
       strategy: QUESTION_STRATEGIES.includes(r.strategy as QuestionStrategy) ? r.strategy as QuestionStrategy : undefined,
+      lifeStage: LIFE_STAGES.includes(r.life_stage as LifeStage) ? r.life_stage as LifeStage : undefined,
+      currentTopic: r.current_topic ?? undefined,
+      nextTopicBeat: r.next_topic_beat,
+      topicComplete: r.topic_complete == null ? undefined : r.topic_complete === "true",
+      returnToLifeRoadmap: r.return_to_life_roadmap == null ? undefined : r.return_to_life_roadmap === "true",
     }));
 
     const decision = await decideNextTurn({
@@ -218,4 +244,3 @@ app.post("/api/tts", async (req, res) => {
 export const server = app.listen(config.port, "0.0.0.0", () => {
   console.log(JSON.stringify({ level: "info", event: "server_started", port: config.port, mode: appMode, providers }));
 });
-
