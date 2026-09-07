@@ -8,10 +8,12 @@ import { synthesizeSpeech } from "./elevenlabs.js";
 import {
   CHRONOLOGY_STATUSES,
   FOLLOWUP_VALUES,
+  STORY_IMPORTANCE_VALUES,
   STORY_RESOLUTION_STATUSES,
   decideNextTurn,
   type ChronologyStatus,
   type FollowupValue,
+  type StoryImportance,
   type StoryResolutionStatus,
 } from "./openaiInterview.js";
 import {
@@ -144,7 +146,12 @@ app.post("/api/turns/:id/process", async (req, res) => {
               ai_payload->>'story_is_emerging' as story_is_emerging,
               ai_payload->>'followup_value' as followup_value,
               ai_payload->>'followup_reason' as followup_reason,
-              ai_payload->>'story_resolution_status' as story_resolution_status
+              ai_payload->>'story_resolution_status' as story_resolution_status,
+              ai_payload->>'story_importance' as story_importance,
+              ai_payload->>'current_thread_followup_count' as current_thread_followup_count,
+              ai_payload->>'followup_budget' as followup_budget,
+              ai_payload->>'followup_budget_remaining' as followup_budget_remaining,
+              ai_payload->>'should_advance' as should_advance
        from turns
        where session_id=$1 and intent='story_answer' and transcript is not null and id <> $2
        order by created_at desc limit 50`,
@@ -161,6 +168,11 @@ app.post("/api/turns/:id/process", async (req, res) => {
       followup_value?: string | null;
       followup_reason?: string | null;
       story_resolution_status?: string | null;
+      story_importance?: string | null;
+      current_thread_followup_count?: string | null;
+      followup_budget?: string | null;
+      followup_budget_remaining?: string | null;
+      should_advance?: string | null;
     }) => ({
       question: r.question_text,
       answer: r.transcript,
@@ -178,6 +190,17 @@ app.post("/api/turns/:id/process", async (req, res) => {
       storyResolutionStatus: STORY_RESOLUTION_STATUSES.includes(r.story_resolution_status as StoryResolutionStatus)
         ? r.story_resolution_status as StoryResolutionStatus
         : undefined,
+      storyImportance: STORY_IMPORTANCE_VALUES.includes(r.story_importance as StoryImportance)
+        ? r.story_importance as StoryImportance
+        : undefined,
+      currentThreadFollowupCount: r.current_thread_followup_count == null
+        ? undefined
+        : Number(r.current_thread_followup_count),
+      followupBudget: r.followup_budget == null ? undefined : Number(r.followup_budget),
+      followupBudgetRemaining: r.followup_budget_remaining == null
+        ? undefined
+        : Number(r.followup_budget_remaining),
+      shouldAdvance: r.should_advance == null ? undefined : r.should_advance === "true",
     }));
 
     const decision = await decideNextTurn({

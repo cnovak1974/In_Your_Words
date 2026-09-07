@@ -11,6 +11,7 @@ const {
   FOLLOWUP_VALUES,
   INTERVIEW_DIRECTOR_SCHEMA,
   QUESTION_WRITER_SCHEMA,
+  STORY_IMPORTANCE_VALUES,
   STORY_RESOLUTION_STATUSES,
   decideNextTurn,
   directNextTurn,
@@ -33,6 +34,11 @@ function historyTurn(args, decision) {
     followupValue: decision.followup_value,
     followupReason: decision.followup_reason,
     storyResolutionStatus: decision.story_resolution_status,
+    storyImportance: decision.story_importance,
+    currentThreadFollowupCount: decision.current_thread_followup_count,
+    followupBudget: decision.followup_budget,
+    followupBudgetRemaining: decision.followup_budget_remaining,
+    shouldAdvance: decision.should_advance,
   };
 }
 
@@ -60,6 +66,7 @@ function assertResolvedTransition(result) {
   assert.equal(result.direction.followup_value, "low");
   assert.equal(result.direction.story_resolution_status, "resolved");
   assert.equal(result.direction.should_advance, true);
+  assert.equal(result.direction.followup_budget_remaining, 0);
   assert.doesNotMatch(result.decision.next_question, genericResolvedContinuation);
 }
 
@@ -118,17 +125,22 @@ test("boxing sequence anchors age and then opens a fight story", async () => {
   for (const { decision } of results) assert.doesNotMatch(decision.next_question, vagueQuestion);
 });
 
-test("first job sequence anchors chronology and opens how it began", async () => {
+test("first job spends two useful follow-ups and then leaves the thread", async () => {
   const results = await runSequence("What came next as you got older?", [
-    "My first job was at a neighborhood market.",
-    "I was sixteen.",
+    "My first job was at a neighborhood market when I was sixteen.",
     "My aunt introduced me to the owner.",
+    "Learning to be dependable mattered most to me.",
   ]);
-  assert.equal(results[0].direction.context_opportunity, "need_age");
-  assert.equal(results[0].decision.next_question, "How old were you when you started that job?");
-  assert.equal(results[1].decision.next_question, "How did you get that job?");
-  assert.equal(results[2].direction.story_is_emerging, true);
-  assert.equal(results[2].decision.next_question, "How did that lead to you getting the job?");
+  assert.equal(results[0].direction.story_importance, "meaningful");
+  assert.equal(results[0].direction.current_thread_followup_count, 0);
+  assert.equal(results[0].direction.followup_budget, 2);
+  assert.equal(results[0].direction.followup_budget_remaining, 2);
+  assert.equal(results[0].decision.next_question, "How did you get that job?");
+  assert.equal(results[1].direction.current_thread_followup_count, 1);
+  assert.equal(results[1].direction.followup_budget_remaining, 1);
+  assert.equal(results[1].decision.next_question, "What mattered most to you about that first job?");
+  assertResolvedTransition(results[2]);
+  assert.equal(results[2].decision.next_question, "What came next in your working life?");
   for (const { decision } of results) assert.doesNotMatch(decision.next_question, vagueQuestion);
 });
 
@@ -191,18 +203,41 @@ test("childhood mischief permits one consequential follow-up and then advances",
   const results = await runSequence("What were you getting into as a child?", [
     "When I was twelve, a friend and I smoked cigarettes in the shed.",
     "I got sick, my parents caught me, and I was grounded.",
-    "Yes, I stopped smoking after that.",
   ]);
 
+  assert.equal(results[0].direction.story_importance, "minor");
+  assert.equal(results[0].direction.current_thread_followup_count, 0);
+  assert.equal(results[0].direction.followup_budget, 1);
+  assert.equal(results[0].direction.followup_budget_remaining, 1);
   assert.equal(results[0].direction.story_resolution_status, "developing");
   assert.equal(results[0].direction.followup_value, "high");
   assert.match(results[0].direction.followup_reason, /consequence|conflict/i);
-  assert.equal(results[1].direction.story_resolution_status, "resolved");
-  assert.equal(results[1].direction.followup_value, "medium");
-  assert.match(results[1].direction.followup_reason, /behavior change/i);
+  assertResolvedTransition(results[1]);
   assert.doesNotMatch(results[1].decision.next_question, /grounded|how long|after that week/i);
+  assert.equal(results[1].decision.next_question, "What came next in your childhood?");
+});
+
+test("father's lake accident gets two strong follow-ups, then skips logistics", async () => {
+  const results = await runSequence("Was there a family event you remember clearly?", [
+    "My dad fell into the lake and almost drowned.",
+    "We pulled him out, took him to the hospital, and he recovered.",
+    "No, after he came home things went back to normal for our family.",
+  ]);
+
+  assert.equal(results[0].direction.story_importance, "meaningful");
+  assert.equal(results[0].direction.current_thread_followup_count, 0);
+  assert.equal(results[0].direction.followup_budget, 2);
+  assert.equal(results[0].direction.followup_budget_remaining, 2);
+  assert.equal(results[0].decision.next_question, "How serious was your father's accident?");
+  assert.equal(results[1].direction.current_thread_followup_count, 1);
+  assert.equal(results[1].direction.followup_budget_remaining, 1);
+  assert.equal(results[1].direction.story_resolution_status, "resolved");
+  assert.equal(results[1].decision.next_question, "Did that accident change anything important for your family afterward?");
   assertResolvedTransition(results[2]);
-  assert.equal(results[2].decision.next_question, "What came next in your childhood?");
+  assert.equal(results[2].decision.next_question, "What came next for you after that?");
+  for (const { decision } of results) {
+    assert.doesNotMatch(decision.next_question, /sisters?|conversation|living arrangement|how did .* arrangement work/i);
+  }
 });
 
 test("resolved trouble with parents gets one relationship check, not an interrogation", async () => {
@@ -260,6 +295,34 @@ test("resolved sports memory asks once about significance and then leaves the ev
   assert.doesNotMatch(results[1].decision.next_question, /basket|game|celebrat/i);
 });
 
+test("major life event earns extra depth only for new high-value dimensions", async () => {
+  const results = await runSequence("Was there an event that changed your life?", [
+    "Our house burned down and we lost everything.",
+    "We moved in with relatives, and I changed schools.",
+    "My aunt became like a second mother, but I stopped speaking to my father for years.",
+    "We reconciled years later after I called him.",
+    "I wanted to make peace, and after that we were close until he died.",
+  ]);
+
+  assert.equal(results[0].direction.story_importance, "major");
+  assert.equal(results[0].direction.followup_budget, 3);
+  assert.equal(results[0].decision.next_question, "How did the fire change your life at that time?");
+  assert.equal(results[1].direction.current_thread_followup_count, 1);
+  assert.equal(results[1].direction.followup_value, "high");
+  assert.equal(results[1].decision.next_question, "Did those changes affect your family relationships?");
+  assert.equal(results[2].direction.current_thread_followup_count, 2);
+  assert.match(results[2].direction.followup_reason, /relationship conflict|long-term impact/i);
+  assert.equal(results[2].decision.next_question, "How did that period change your relationship with your father?");
+  assert.equal(results[3].direction.current_thread_followup_count, 3);
+  assert.equal(results[3].direction.followup_budget, 4);
+  assert.equal(results[3].direction.followup_budget_remaining, 1);
+  assert.match(results[3].direction.followup_reason, /decision|turning point/i);
+  assert.equal(results[3].decision.next_question, "What led you to call your father?");
+  assertResolvedTransition(results[4]);
+  assert.equal(results[4].direction.followup_budget, 4);
+  assert.equal(results[4].decision.next_question, "What was the next big change in your life?");
+});
+
 test("Director ignores incidental nouns and follows narrative action", async () => {
   const cases = [
     {
@@ -287,12 +350,14 @@ test("Director schema is compact and cannot generate question wording", () => {
   assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.context_opportunity.enum, CONTEXT_OPPORTUNITIES);
   assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.followup_value.enum, FOLLOWUP_VALUES);
   assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.story_resolution_status.enum, STORY_RESOLUTION_STATUSES);
+  assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.story_importance.enum, STORY_IMPORTANCE_VALUES);
   assert.deepEqual(Object.keys(INTERVIEW_DIRECTOR_SCHEMA.properties), INTERVIEW_DIRECTOR_SCHEMA.required);
   assert.ok(Object.keys(INTERVIEW_DIRECTOR_SCHEMA.properties).indexOf("director_note") < Object.keys(INTERVIEW_DIRECTOR_SCHEMA.properties).indexOf("chronology_status"));
   for (const field of [
     "interview_intent", "chronology_status", "approx_age_known", "approx_year_known", "place_known",
     "current_life_period", "current_topic", "story_is_emerging", "story_thread", "director_note",
     "question_objective", "followup_value", "followup_reason", "story_resolution_status",
+    "story_importance", "current_thread_followup_count", "followup_budget", "followup_budget_remaining",
     "should_advance", "context_opportunity",
   ]) assert.ok(INTERVIEW_DIRECTOR_SCHEMA.required.includes(field));
   assert.deepEqual(QUESTION_WRITER_SCHEMA.required, ["next_question", "contains_unstated_personal_fact", "assumption_explanation"]);
@@ -306,8 +371,12 @@ test("Director schema is compact and cannot generate question wording", () => {
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /"More detail" is not a valid reason/i);
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /If followup_value=low.*should_advance=true/i);
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /story_resolution_status=resolved.*do not keep mining/i);
+  assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /Do not confuse completeness with quality/i);
+  assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /budget is a ceiling, not a quota/i);
+  assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /followup_budget_remaining=0.*followup_value=low.*should_advance=true/i);
   assert.match(QUESTION_WRITER_INSTRUCTIONS, /may not change the selected subject or objective/i);
   assert.match(QUESTION_WRITER_INSTRUCTIONS, /followup_value=low or story_resolution_status=resolved/i);
+  assert.match(QUESTION_WRITER_INSTRUCTIONS, /followup_budget_remaining=0 and story_resolution_status=resolved/i);
   assert.match(QUESTION_WRITER_INSTRUCTIONS, /usually in one short sentence/i);
 });
 

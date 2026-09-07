@@ -15,6 +15,11 @@ This file is the human-readable counterpart to the two-pass contracts in `apps/a
 - Before staying with an event, identify the meaningfully new dimension the question is likely to reveal: consequence, turning point, emotion, relationship, decision, conflict, memorable event, chronology, behavior change, or transition. “More detail” is not sufficient.
 - One strong follow-up is better than three weak ones. Once an event has a beginning, development, and resolution, normally move forward unless a genuinely important thread emerged.
 - followup_value, followup_reason, and story_resolution_status record this editorial judgment in the existing AI payload. Low-value follow-ups normally require should_advance=true.
+- Do not confuse completeness with quality. Leave an anecdote partially explored once its important meaning, consequence, or turning point is clear.
+- story_importance sets a ceiling: minor anecdotes normally get 1 follow-up, meaningful events 2–3, and major events 3 unless each extra question is justified by a newly supplied high-value dimension.
+- current_thread_followup_count, followup_budget, and followup_budget_remaining carry that ceiling through recent history. The budget is never a quota.
+- When a resolved thread reaches zero remaining budget, advance. Do not spend storyteller energy on hospital logistics, individual reactions, conversation sequencing, or living-arrangement mechanics.
+- Prefer one significance question over several logistical questions, then use natural chronology-forward transition language.
 - Avoid defaulting to “What do you remember about…”, “What else do you remember about…”, or “Tell me more about…”.
 - Do not over-interrogate incidental objects, scenery, weather, furnishings, or clothing.
 - Before drafting a question, assess chronology, useful missing anchors, whether a story is emerging, the active thread, and whether to advance.
