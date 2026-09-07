@@ -18,6 +18,7 @@ This file is the human-readable counterpart to the two-pass contracts in `apps/a
 - After a complete action or transition, prefer what happened next or what changed.
 - After two consecutive detail questions in one scene, normally advance chronology or transition.
 - Pass 1 is the Interview Director. It returns compact chronology and story diagnostics plus one question objective, but cannot generate question wording.
+- The Director makes the editorial interviewing judgment first, records it in director_note and question_objective, and only then serializes supporting categories. Categories summarize the judgment; they do not produce it.
 - Pass 2 is the Question Writer. It may only turn the Director's objective into one concise grounded spoken question; it cannot select another subject or objective.
 - context_opportunity records whether age, year, or place is the best next anchor, or whether date and place are ready for possible future opt-in context retrieval. It never triggers historical retrieval now.
 - App questions and ordinary app commands return directly from the planner without the story-question writer.

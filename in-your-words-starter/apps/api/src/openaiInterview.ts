@@ -4,7 +4,15 @@ import { INTERVIEW_DIRECTOR_INSTRUCTIONS, QUESTION_WRITER_INSTRUCTIONS } from ".
 
 const openai = new OpenAI({ apiKey: config.openaiApiKey });
 
-export const CHRONOLOGY_STATUSES = ["unanchored", "partially_anchored", "anchored", "transitioning"] as const;
+export const CHRONOLOGY_STATUSES = [
+  "needs_age_anchor",
+  "needs_year_anchor",
+  "needs_place_anchor",
+  "unanchored",
+  "partially_anchored",
+  "anchored",
+  "transitioning",
+] as const;
 export const CONTEXT_OPPORTUNITIES = ["none", "need_age", "need_year", "need_place", "date_place_ready"] as const;
 
 export type ChronologyStatus = typeof CHRONOLOGY_STATUSES[number];
@@ -93,26 +101,26 @@ export const INTERVIEW_DIRECTOR_SCHEMA = {
   additionalProperties: false,
   properties: {
     interview_intent: { type: "string", enum: ["story_answer", "app_question", "app_command"] },
+    director_note: { type: "string" },
+    question_objective: { type: "string" },
+    story_thread: { type: "string" },
+    current_life_period: { type: "string" },
+    current_topic: { type: "string" },
+    story_is_emerging: { type: "boolean" },
+    should_advance: { type: "boolean" },
     chronology_status: { type: "string", enum: CHRONOLOGY_STATUSES },
     approx_age_known: { type: "boolean" },
     approx_year_known: { type: "boolean" },
     place_known: { type: "boolean" },
-    current_life_period: { type: "string" },
-    current_topic: { type: "string" },
-    story_is_emerging: { type: "boolean" },
-    story_thread: { type: "string" },
-    director_note: { type: "string" },
-    question_objective: { type: "string" },
-    should_advance: { type: "boolean" },
     context_opportunity: { type: "string", enum: CONTEXT_OPPORTUNITIES },
     app_response: { type: "string" },
     command: commandSchema,
     entities: entitiesSchema,
   },
   required: [
-    "interview_intent", "chronology_status", "approx_age_known", "approx_year_known", "place_known",
-    "current_life_period", "current_topic", "story_is_emerging", "story_thread", "director_note",
-    "question_objective", "should_advance", "context_opportunity", "app_response", "command", "entities",
+    "interview_intent", "director_note", "question_objective", "story_thread", "current_life_period",
+    "current_topic", "story_is_emerging", "should_advance", "chronology_status", "approx_age_known",
+    "approx_year_known", "place_known", "context_opportunity", "app_response", "command", "entities",
   ],
 };
 
@@ -241,9 +249,9 @@ function mockDirector(args: TurnArgs): InterviewDirectorResult {
       approx_age_known: ageKnown,
       approx_year_known: yearKnown,
       place_known: /\b(?:at|in) (?:the )?ymca\b/i.test(allText),
-      current_life_period: "childhood or adolescence",
+      current_life_period: "childhood",
       current_topic: "boxing",
-      story_thread: "how boxing entered and unfolded in the storyteller's life",
+      story_thread: "boxing became a meaningful childhood activity",
       should_advance: false,
       entities: { ...emptyEntities(), organizations: /ymca/i.test(allText) ? ["YMCA"] : [] },
     };
@@ -304,7 +312,8 @@ function mockDirector(args: TurnArgs): InterviewDirectorResult {
     }
     return storyDirector({
       ...base,
-      chronology_status: "unanchored",
+      chronology_status: "needs_age_anchor",
+      story_is_emerging: true,
       director_note: "Boxing appears to be a meaningful childhood activity, but we do not yet know when it began. Establish age first, then explore how the storyteller got involved and whether they actually fought.",
       question_objective: "Establish how old the storyteller was when they began boxing.",
       context_opportunity: "need_age",
@@ -344,8 +353,8 @@ function mockDirector(args: TurnArgs): InterviewDirectorResult {
     }
     return storyDirector({
       ...base,
-      chronology_status: "unanchored",
-      story_is_emerging: false,
+      chronology_status: "needs_age_anchor",
+      story_is_emerging: true,
       director_note: "A first job is a meaningful life transition, but its timing is not established. Anchor the storyteller's age before developing how the job began.",
       question_objective: "Establish how old the storyteller was when they started their first job.",
       context_opportunity: "need_age",
@@ -386,7 +395,7 @@ function mockDirector(args: TurnArgs): InterviewDirectorResult {
     }
     return storyDirector({
       ...base,
-      chronology_status: placeKnown ? "partially_anchored" : "unanchored",
+      chronology_status: "needs_age_anchor",
       story_is_emerging: false,
       director_note: "The move opens a major transition, but the storyteller's age is not yet known. Establish age before developing what led to the move.",
       question_objective: "Establish approximately how old the storyteller was at the time of the move.",
@@ -427,7 +436,7 @@ function mockDirector(args: TurnArgs): InterviewDirectorResult {
     }
     return storyDirector({
       ...base,
-      chronology_status: "unanchored",
+      chronology_status: "needs_age_anchor",
       story_is_emerging: false,
       director_note: "Joining the military is a major transition, but its timing is not anchored. Establish the storyteller's age first.",
       question_objective: "Establish how old the storyteller was when they joined the military.",
@@ -468,7 +477,7 @@ function mockDirector(args: TurnArgs): InterviewDirectorResult {
     }
     return storyDirector({
       ...base,
-      chronology_status: "unanchored",
+      chronology_status: "needs_age_anchor",
       story_is_emerging: false,
       director_note: "Meeting a spouse is a meaningful relationship milestone, but its place in the life story is not anchored. Establish age first.",
       question_objective: "Establish approximately how old the storyteller was when they met their spouse.",
@@ -509,7 +518,7 @@ function mockDirector(args: TurnArgs): InterviewDirectorResult {
     }
     return storyDirector({
       ...base,
-      chronology_status: "unanchored",
+      chronology_status: "needs_age_anchor",
       story_is_emerging: false,
       director_note: "The childhood activity may hold real experience, but its timing is unclear. Establish age before developing how it began.",
       question_objective: "Establish approximately how old the storyteller was when the childhood activity began.",

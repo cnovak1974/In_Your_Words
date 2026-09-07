@@ -79,7 +79,10 @@ test("boxing sequence anchors age and then opens a fight story", async () => {
   ]);
 
   assert.equal(results[0].direction.context_opportunity, "need_age");
+  assert.equal(results[0].direction.chronology_status, "needs_age_anchor");
   assert.equal(results[0].direction.approx_age_known, false);
+  assert.equal(results[0].direction.story_is_emerging, true);
+  assert.equal(results[0].direction.current_life_period, "childhood");
   assert.match(results[0].direction.question_objective, /establish.*how old/i);
   assert.equal(results[0].decision.next_question, "How old were you when you started boxing?");
 
@@ -196,6 +199,8 @@ test("Director schema is compact and cannot generate question wording", () => {
   assert.equal(Object.hasOwn(INTERVIEW_DIRECTOR_SCHEMA.properties, "next_question"), false);
   assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.chronology_status.enum, CHRONOLOGY_STATUSES);
   assert.deepEqual(INTERVIEW_DIRECTOR_SCHEMA.properties.context_opportunity.enum, CONTEXT_OPPORTUNITIES);
+  assert.deepEqual(Object.keys(INTERVIEW_DIRECTOR_SCHEMA.properties), INTERVIEW_DIRECTOR_SCHEMA.required);
+  assert.ok(Object.keys(INTERVIEW_DIRECTOR_SCHEMA.properties).indexOf("director_note") < Object.keys(INTERVIEW_DIRECTOR_SCHEMA.properties).indexOf("chronology_status"));
   for (const field of [
     "interview_intent", "chronology_status", "approx_age_known", "approx_year_known", "place_known",
     "current_life_period", "current_topic", "story_is_emerging", "story_thread", "director_note",
@@ -203,6 +208,8 @@ test("Director schema is compact and cannot generate question wording", () => {
   ]) assert.ok(INTERVIEW_DIRECTOR_SCHEMA.required.includes(field));
   assert.deepEqual(QUESTION_WRITER_SCHEMA.required, ["next_question", "contains_unstated_personal_fact", "assumption_explanation"]);
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /understand a life, not extract keywords/i);
+  assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /Do not begin by filling classification fields/i);
+  assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /categorical fields summarize and validate the decision; they must never generate it/i);
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /MUST NOT write, draft, suggest, or return the final question/);
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /Strongly favor establishing time/);
   assert.match(INTERVIEW_DIRECTOR_INSTRUCTIONS, /stop following a predetermined checklist/i);
